@@ -9,10 +9,8 @@ import (
 )
 
 //IsConfidentialFile indicates whether a file is potentially confidential based on its name or extension, with a narrative indicating
-//what sort of file it may be if it is potentially condidential
+//what sort of file it may be if it is potentially confidential
 func IsConfidentialFile(path string) (bool, string) {
-	// var narrative string
-	// var truth bool
 	extension := filepath.Ext(path)
 	baseName := strings.TrimSuffix(filepath.Base(path), extension)
 	if narrative, present := DangerousFileNames[baseName]; present {
