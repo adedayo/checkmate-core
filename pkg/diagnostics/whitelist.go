@@ -4,6 +4,15 @@ import (
 	"regexp"
 )
 
+//WhitelistProvider implements a whitelist strategy
+type WhitelistProvider interface {
+	//ShouldWhitelist determines whether the supplied value should be whitelisted based on its value and the
+	//path (if any) of the source file providing additional context
+	ShouldWhitelist(pathContext, value string) bool
+	ShouldWhitelistPath(path string) bool
+	ShouldWhitelistValue(value string) bool
+}
+
 // WhitelistDefinition describes whitelist rules
 type WhitelistDefinition struct {
 	//These specify regular expressions of matching strings that should be ignored as secrets anywhere they are found
@@ -157,13 +166,4 @@ func (wl *defaultWhitelistProvider) ShouldWhitelistValue(value string) bool {
 	}
 
 	return false
-}
-
-//WhitelistProvider implements a whitelist strategy
-type WhitelistProvider interface {
-	//ShouldWhitelist determines whether the supplied value should be whitelisted based on its value and the
-	//path (if any) of the source file providing additional context
-	ShouldWhitelist(pathContext, value string) bool
-	ShouldWhitelistPath(path string) bool
-	ShouldWhitelistValue(value string) bool
 }
