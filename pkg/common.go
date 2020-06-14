@@ -121,7 +121,7 @@ func (sda *simpleDiagnosticAggregator) Aggregate() (agg []diagnostics.SecurityDi
 	for i, di := range diagnostics {
 		for j, dj := range diagnostics {
 			if j != i {
-				if dj.Range.Contains(di.Range) && di.Justification.Headline.Confidence <= dj.Justification.Headline.Confidence {
+				if dj.Range.Contains(di.Range) && di.Justification.Headline.Confidence <= dj.Justification.Headline.Confidence && !di.Range.Contains(dj.Range) {
 					excluded[i] = true
 					break
 				}
