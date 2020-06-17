@@ -17,8 +17,8 @@ type SecurityDiagnostic struct {
 	//Location is an optional value that could contain filepath or URI of resource that this diagnostic applies to
 	Location *string `json:"location,omitempty"`
 	//used for identifying the source of the diagnostics
-	ProviderID  *string `json:"providerID,omitempty"`
-	Whitelisted bool    //indicates whether or not this diagnostics has been whitelisted
+	ProviderID *string `json:"providerID,omitempty"`
+	Excluded   bool    //indicates whether or not this diagnostics has been excluded
 }
 
 //Confidence reflects the degree of confidence that we have in an assessment

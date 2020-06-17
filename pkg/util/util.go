@@ -95,7 +95,7 @@ type PositionProvider interface {
 //PathConsumer is a sink for paths and URIs
 type PathConsumer interface {
 	Consume(path string)
-	diagnostics.WhitelistProvider
+	diagnostics.ExclusionProvider
 }
 
 //NewPathMultiplexer creates a choreographer that orchestrates the consumption of paths by consumers

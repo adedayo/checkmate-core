@@ -28,5 +28,5 @@ type ScanRequest struct {
 	Type       ScanType
 	Paths      []string     // for PathScan type
 	DataToScan []DataToScan // for StringScan type
-	Whitelists  diagnostics.WhitelistDefinition
+	Excludes  diagnostics.ExcludeDefinition
 }

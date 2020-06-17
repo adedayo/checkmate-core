@@ -4,17 +4,17 @@ import (
 	"regexp"
 )
 
-//WhitelistProvider implements a whitelist strategy
-type WhitelistProvider interface {
-	//ShouldWhitelist determines whether the supplied value should be whitelisted based on its value and the
+//ExclusionProvider implements a exclude strategy
+type ExclusionProvider interface {
+	//ShouldExclude determines whether the supplied value should be excluded based on its value and the
 	//path (if any) of the source file providing additional context
-	ShouldWhitelist(pathContext, value string) bool
-	ShouldWhitelistPath(path string) bool
-	ShouldWhitelistValue(value string) bool
+	ShouldExclude(pathContext, value string) bool
+	ShouldExcludePath(path string) bool
+	ShouldExcludeValue(value string) bool
 }
 
-// WhitelistDefinition describes whitelist rules
-type WhitelistDefinition struct {
+// ExcludeDefinition describes exclude rules
+type ExcludeDefinition struct {
 	//These specify regular expressions of matching strings that should be ignored as secrets anywhere they are found
 	GloballyExcludedRegExs []string `yaml:"GloballyExcludedRegExs,omitempty"`
 	//These specify strings that should be ignored as secrets anywhere they are found
@@ -28,18 +28,18 @@ type WhitelistDefinition struct {
 	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex,omitempty"`
 }
 
-//defaultWhitelistProvider contains various mechanisms for excluding false positives
-type defaultWhitelistProvider struct {
-	*WhitelistDefinition
+//defaultExclusionProvider contains various mechanisms for excluding false positives
+type defaultExclusionProvider struct {
+	*ExcludeDefinition
 	globallyExcludedRegExsCompiled  []*regexp.Regexp
 	pathExclusionRegExsCompiled     []*regexp.Regexp
 	pathRegexExcludedRegExsCompiled map[*regexp.Regexp][]*regexp.Regexp
 }
 
-//CompileWhitelists returns a WhitelistProvider with the regular expressions already compiled
-func CompileWhitelists(whitelist *WhitelistDefinition) (WhitelistProvider, error) {
-	wl := defaultWhitelistProvider{
-		WhitelistDefinition: whitelist,
+//CompileExcludes returns a ExclusionProvider with the regular expressions already compiled
+func CompileExcludes(exclude *ExcludeDefinition) (ExclusionProvider, error) {
+	wl := defaultExclusionProvider{
+		ExcludeDefinition: exclude,
 	}
 	err := wl.compileRegExs()
 	if err != nil {
@@ -49,10 +49,10 @@ func CompileWhitelists(whitelist *WhitelistDefinition) (WhitelistProvider, error
 	return &wl, nil
 }
 
-//MakeEmptyWhitelists creates an empty default whitelist
-func MakeEmptyWhitelists() WhitelistProvider {
-	return &defaultWhitelistProvider{
-		WhitelistDefinition: &WhitelistDefinition{
+//MakeEmptyExcludes creates an empty default exclude list
+func MakeEmptyExcludes() ExclusionProvider {
+	return &defaultExclusionProvider{
+		ExcludeDefinition: &ExcludeDefinition{
 			GloballyExcludedStrings: []string{},
 			GloballyExcludedRegExs:  []string{},
 			PathExclusionRegExs:     []string{},
@@ -66,7 +66,7 @@ func MakeEmptyWhitelists() WhitelistProvider {
 }
 
 //compileRegExs ensures the regular expressions defined are compiled before use
-func (wl *defaultWhitelistProvider) compileRegExs() error {
+func (wl *defaultExclusionProvider) compileRegExs() error {
 	wl.globallyExcludedRegExsCompiled = make([]*regexp.Regexp, 0)
 	for _, s := range wl.GloballyExcludedRegExs {
 		if re, err := regexp.Compile(s); err == nil {
@@ -104,9 +104,9 @@ func (wl *defaultWhitelistProvider) compileRegExs() error {
 	return nil
 }
 
-//ShouldWhitelist determines whether the supplied value should be whitelisted based on its value and the
+//ShouldExclude determines whether the supplied value should be excluded based on its value and the
 //path (if any) of the source file providing additional context
-func (wl *defaultWhitelistProvider) ShouldWhitelist(pathContext, value string) bool {
+func (wl *defaultExclusionProvider) ShouldExclude(pathContext, value string) bool {
 	for _, s := range wl.GloballyExcludedStrings {
 		if s == value {
 			return true
@@ -138,8 +138,8 @@ func (wl *defaultWhitelistProvider) ShouldWhitelist(pathContext, value string) b
 	return false
 }
 
-//ShouldWhitelistPath determines whether the path should be excluded from analysis
-func (wl *defaultWhitelistProvider) ShouldWhitelistPath(pathContext string) bool {
+//ShouldExcludePath determines whether the path should be excluded from analysis
+func (wl *defaultExclusionProvider) ShouldExcludePath(pathContext string) bool {
 
 	for _, prx := range wl.pathExclusionRegExsCompiled {
 		if prx.MatchString(pathContext) {
@@ -150,8 +150,8 @@ func (wl *defaultWhitelistProvider) ShouldWhitelistPath(pathContext string) bool
 	return false
 }
 
-//ShouldWhitelistValue determines whether the value should be excluded from results
-func (wl *defaultWhitelistProvider) ShouldWhitelistValue(value string) bool {
+//ShouldExcludeValue determines whether the value should be excluded from results
+func (wl *defaultExclusionProvider) ShouldExcludeValue(value string) bool {
 
 	for _, s := range wl.GloballyExcludedStrings {
 		if s == value {
