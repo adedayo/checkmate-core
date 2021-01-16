@@ -70,14 +70,21 @@ func makeMap(elements string) map[string]string {
 	return result
 }
 
-//SourceToSecurityDiagnostics is an interface that describes an object that can consume source and generate security diagnostics
+//SourceToSecurityDiagnostics is an interface that describes an object that can consume source and generates security diagnostics
 type SourceToSecurityDiagnostics interface {
 	util.SourceConsumer
 	diagnostics.SecurityDiagnosticsProvider
 }
 
-//PathToSecurityDiagnostics is an interface that describes an object that can consume a file path or URI and generate security diagnostics
+//PathToSecurityDiagnostics is an interface that describes an object that can consume a file path or URI and generates security diagnostics
 type PathToSecurityDiagnostics interface {
+	util.PathConsumer
+	diagnostics.SecurityDiagnosticsProvider
+}
+
+//ResourceToSecurityDiagnostics is an interface that describes an object that consumes arbitrary resource and generates security diagnostics
+type ResourceToSecurityDiagnostics interface {
+	util.SourceConsumer
 	util.PathConsumer
 	diagnostics.SecurityDiagnosticsProvider
 }

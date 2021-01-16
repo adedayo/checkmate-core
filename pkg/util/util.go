@@ -83,7 +83,7 @@ func (dpm *defaultPathMultiplexer) SetPathConsumers(consumers ...PathConsumer) {
 
 func (dpm *defaultPathMultiplexer) ConsumePath(path string) {
 	for _, c := range dpm.consumers {
-		c.Consume(path)
+		c.ConsumePath(path)
 	}
 }
 
@@ -94,7 +94,7 @@ type PositionProvider interface {
 
 //PathConsumer is a sink for paths and URIs
 type PathConsumer interface {
-	Consume(path string)
+	ConsumePath(path string)
 	diagnostics.ExclusionProvider
 }
 
