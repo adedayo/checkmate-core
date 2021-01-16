@@ -40,6 +40,60 @@ func excludeName(basname string) bool {
 	return false
 }
 
+//GetSensitiveFilesDescriptors gets all registered sensitive file descriptions
+func GetSensitiveFilesDescriptors() (files []SensitiveFile) {
+
+	for file, description := range DangerousFileNames {
+		files = append(files, SensitiveFile{
+			Extension:   file,
+			Description: description,
+		})
+	}
+
+	for ext, description := range CertsAndKeyStores {
+		files = append(files, SensitiveFile{
+			Extension:   ext,
+			Description: description,
+		})
+	}
+
+	for ext, description := range DangerousExtensions {
+		files = append(files, SensitiveFile{
+			Extension:   ext,
+			Description: description,
+		})
+	}
+
+	for ext, description := range FinancialAndAccountingExtensions {
+		files = append(files, SensitiveFile{
+			Extension:   ext,
+			Description: description,
+		})
+	}
+
+	files = append(files, SensitiveFile{
+		Extension:   "readme[.].*",
+		Description: "Readme files are usually non-sensitive",
+		Excluded:    true,
+	})
+
+	files = append(files, SensitiveFile{
+		Extension:   "changelog[.].*",
+		Description: "Changelog files are usually non-sensitive",
+		Excluded:    true,
+	})
+
+	return
+}
+
+//SensitiveFile is a description of a potentially sensitive file based on its name or extension
+type SensitiveFile struct {
+	//if the value does not start with a . then filename is intended
+	Extension   string
+	Description string
+	Excluded    bool //flag to indicate that this extension or filename should be ignored as non-sensitive
+}
+
 func appendMaps(maps ...map[string]string) map[string]string {
 	result := make(map[string]string)
 	for _, m := range maps {
