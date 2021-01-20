@@ -126,7 +126,7 @@ func makeMap(elements string) map[string]string {
 
 //SourceToSecurityDiagnostics is an interface that describes an object that can consume source and generates security diagnostics
 type SourceToSecurityDiagnostics interface {
-	util.SourceConsumer
+	util.ResourceConsumer
 	diagnostics.SecurityDiagnosticsProvider
 }
 
@@ -138,7 +138,7 @@ type PathToSecurityDiagnostics interface {
 
 //ResourceToSecurityDiagnostics is an interface that describes an object that consumes arbitrary resource and generates security diagnostics
 type ResourceToSecurityDiagnostics interface {
-	util.SourceConsumer
+	util.ResourceConsumer
 	util.PathConsumer
 	diagnostics.SecurityDiagnosticsProvider
 }

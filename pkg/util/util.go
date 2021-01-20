@@ -60,11 +60,11 @@ func getFiles(dir string) (paths []string) {
 	return
 }
 
-//SourceMultiplexer interface defines a source reader that can be multiplexed to multiple consumers. It provides
+//ResourceMultiplexer interface defines a path or source reader that can be multiplexed to multiple consumers. It provides
 //additional utility such as mapping a source index to the line and character, i.e. the `code.Position` in the source
-type SourceMultiplexer interface {
+type ResourceMultiplexer interface {
 	//SetSource is the source reader to multiplex to multiple consumers, which will be provided with a copy of the source data as it is being streamed in from the source
-	SetSourceAndConsumers(source *io.Reader, provideSourceInDiagnostics bool, consumers ...SourceConsumer)
+	SetResourceAndConsumers(filePath string, source *io.Reader, provideSourceInDiagnostics bool, consumers ...ResourceConsumer)
 }
 
 //PathMultiplexer interface defines an aggregator of analysers that can consume filesystem paths and URIs and process them
@@ -89,7 +89,7 @@ func (dpm *defaultPathMultiplexer) ConsumePath(path string) {
 
 //PositionProvider provides a "global" view of code location, given an arbitrary character index.
 type PositionProvider interface {
-	GetPosition(index int) code.Position
+	GetPosition(index int64) code.Position
 }
 
 //PathConsumer is a sink for paths and URIs
@@ -105,11 +105,13 @@ func NewPathMultiplexer(consumers ...PathConsumer) PathMultiplexer {
 	return &dpm
 }
 
-//SourceConsumer is a sink for streaming source
-type SourceConsumer interface {
+//ResourceConsumer is a sink for streaming source
+type ResourceConsumer interface {
 	//Consume allows a source processor receive `source` data streamed in "chunks", with `startIndex` indicating the
 	//character location of the first character in the stream
-	Consume(startIndex int, source string)
+	Consume(startIndex int64, source string)
+	//ConsumePath allows resource consumers that process filepaths directly to analyse files on disk
+	ConsumePath(filePath string)
 	SetLineKeeper(*LineKeeper)
 	//ShouldProvideSourceInDiagnostics toggles whether source evidence should be provided with diagnostics, defaults to false
 	ShouldProvideSourceInDiagnostics(bool)
@@ -117,20 +119,22 @@ type SourceConsumer interface {
 	End()
 }
 
-//NewSourceMultiplexer creates a source multiplexer over an input reader
-func NewSourceMultiplexer(source *io.Reader, provideSource bool, consumers ...SourceConsumer) SourceMultiplexer {
-	sm := defaultSourceMultiplexer{}
-	sm.SetSourceAndConsumers(source, provideSource, consumers...)
+//NewResourceMultiplexer creates a source multiplexer over an input reader
+func NewResourceMultiplexer(filePath string, source *io.Reader, provideSource bool, consumers ...ResourceConsumer) ResourceMultiplexer {
+	sm := defaultResourceMultiplexer{}
+	sm.SetResourceAndConsumers(filePath, source, provideSource, consumers...)
 	return &sm
 }
 
-type defaultSourceMultiplexer struct {
+type defaultResourceMultiplexer struct {
+	filePath   string
 	source     *io.Reader
-	consumers  []SourceConsumer
+	consumers  []ResourceConsumer
 	lineKeeper LineKeeper
 }
 
-func (sm *defaultSourceMultiplexer) SetSourceAndConsumers(src *io.Reader, provideSource bool, consumers ...SourceConsumer) {
+func (sm *defaultResourceMultiplexer) SetResourceAndConsumers(filePath string, src *io.Reader, provideSource bool, consumers ...ResourceConsumer) {
+	sm.filePath = filePath
 	sm.source = src
 	sm.consumers = consumers
 	for _, consumer := range consumers {
@@ -141,8 +145,8 @@ func (sm *defaultSourceMultiplexer) SetSourceAndConsumers(src *io.Reader, provid
 }
 
 //begins to stream data from source to the consumers
-func (sm *defaultSourceMultiplexer) start() {
-	startIndex := 0
+func (sm *defaultResourceMultiplexer) start() {
+	startIndex := int64(0)
 
 	for data := range readChunks(*sm.source, dataChunkSize) {
 		locations := reNL.FindAllStringIndex(data, -1)
@@ -155,21 +159,26 @@ func (sm *defaultSourceMultiplexer) start() {
 		consumers := sm.consumers
 		wg.Add(len(consumers))
 		for _, c := range consumers {
-			go func(consumer SourceConsumer, w *sync.WaitGroup) {
+			go func(consumer ResourceConsumer, w *sync.WaitGroup) {
 				defer w.Done()
 				consumer.Consume(startIndex, data)
 			}(c, &wg)
 		}
 		wg.Wait()
-		startIndex += len(data)
+		startIndex += int64(len(data))
 	}
+
+	for _, c := range sm.consumers {
+		c.ConsumePath(sm.filePath)
+	}
+
 	for _, consumer := range sm.consumers {
 		consumer.End()
 	}
 
 }
 
-func (sm *defaultSourceMultiplexer) GetPosition(index int) code.Position {
+func (sm *defaultResourceMultiplexer) GetPosition(index int64) code.Position {
 	return sm.lineKeeper.GetPositionFromCharacterIndex(index)
 }
 
@@ -237,24 +246,24 @@ func (lk *LineKeeper) appendEOLs(eols []int) {
 }
 
 //GetPositionFromCharacterIndex returns the `code.Position` given the index of the character in the file
-func (lk *LineKeeper) GetPositionFromCharacterIndex(pos int) code.Position {
+func (lk *LineKeeper) GetPositionFromCharacterIndex(pos int64) code.Position {
 	//lk.EOLLocations are sorted
 	lk.lock.Lock()
 	defer lk.lock.Unlock()
 	if len(lk.EOLLocations) > 0 {
-		end := len(lk.EOLLocations) - 1
-		if pos > lk.EOLLocations[end] {
+		end := int64(len(lk.EOLLocations) - 1)
+		if pos > int64(lk.EOLLocations[end]) {
 			return code.Position{
 				Line:      end + 1,
-				Character: pos - lk.EOLLocations[end],
+				Character: pos - int64(lk.EOLLocations[end]),
 			}
 		}
 		for i, eol := range lk.EOLLocations {
-			if eol > pos {
+			if int64(eol) > pos {
 				if i > 0 {
 					return code.Position{
-						Line:      i,
-						Character: pos - lk.EOLLocations[i-1],
+						Line:      int64(i),
+						Character: pos - int64(lk.EOLLocations[i-1]),
 					}
 				}
 				break
