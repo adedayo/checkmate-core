@@ -14,6 +14,9 @@ type SecurityDiagnostic struct {
 	HighlightRange code.Range
 	//Source code evidence optionally provided
 	Source *string `json:"source,omitempty"`
+	//SHA256 checksum is an optional SHA256 hash of the secret. High-security environments
+	//may want to consider using an HMAC or similar and ommitting source from the reports
+	SHA256 *string `json:"sha256,omitempty"`
 	//Location is an optional value that could contain filepath or URI of resource that this diagnostic applies to
 	Location *string `json:"location,omitempty"`
 	//used for identifying the source of the diagnostics

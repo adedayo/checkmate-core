@@ -45,7 +45,6 @@ func CompileExcludes(exclude *ExcludeDefinition) (ExclusionProvider, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &wl, nil
 }
 
