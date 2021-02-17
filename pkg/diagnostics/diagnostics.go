@@ -24,6 +24,23 @@ type SecurityDiagnostic struct {
 	Excluded   bool    //indicates whether or not this diagnostics has been excluded
 }
 
+//GoString stringify
+func (sd SecurityDiagnostic) GoString() string {
+	sd.Range = adjustRange(sd.Range)
+	sd.HighlightRange = adjustRange(sd.HighlightRange)
+	b, _ := json.Marshal(sd)
+	return string(b)
+}
+
+//adjust the 0-based position to 1-based for easy human debugging
+func adjustRange(in code.Range) (out code.Range) {
+	out.Start.Line = in.Start.Line + 1
+	out.Start.Character = in.Start.Character + 1
+	out.End.Line = in.End.Line + 1
+	out.End.Character = in.End.Character + 1
+	return
+}
+
 //Confidence reflects the degree of confidence that we have in an assessment
 type Confidence int
 
@@ -47,6 +64,11 @@ func (conf Confidence) String() string {
 	default:
 		return "Unknown"
 	}
+}
+
+//GoString go stringify
+func (conf Confidence) GoString() string {
+	return conf.String()
 }
 
 //MarshalJSON makes a string representation of the confidence
