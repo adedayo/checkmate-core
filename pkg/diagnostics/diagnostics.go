@@ -1,10 +1,15 @@
 package diagnostics
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"log"
 
 	"github.com/adedayo/checkmate-core/pkg/code"
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 )
 
 //SecurityDiagnostic describes a security issue
@@ -133,6 +138,17 @@ func (sdp *DefaultSecurityDiagnosticsProvider) AddConsumers(consumers ...Securit
 
 //Broadcast sends diagnostics to all registered consumers
 func (sdp *DefaultSecurityDiagnosticsProvider) Broadcast(diagnostics SecurityDiagnostic) {
+	//ensure that the source, if provided, is converted to UTF-8
+	if diagnostics.Source != nil {
+		r := transform.NewReader(bytes.NewBufferString(*diagnostics.Source), unicode.UTF8.NewDecoder())
+		data, err := ioutil.ReadAll(r)
+		if err != nil {
+			log.Println(err)
+		} else {
+			*diagnostics.Source = string(data)
+		}
+	}
+
 	for _, c := range sdp.consumers {
 		c.ReceiveDiagnostic(diagnostics)
 	}
