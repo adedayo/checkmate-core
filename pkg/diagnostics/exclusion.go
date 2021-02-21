@@ -19,13 +19,64 @@ type ExcludeDefinition struct {
 	GloballyExcludedRegExs []string `yaml:"GloballyExcludedRegExs,omitempty"`
 	//These specify strings that should be ignored as secrets anywhere they are found
 	GloballyExcludedStrings []string `yaml:"GloballyExcludedStrings,omitempty"`
-	//These specify regular expression that ignore files whose paths match
+	//These specify regular expressions that ignore files whose paths match
 	PathExclusionRegExs []string `yaml:"PathExclusionRegExs,omitempty"`
 	//These specify sets of strings that should be excluded in a given file. That is filepath -> Set(strings)
 	PerFileExcludedStrings map[string][]string `yaml:"PerFileExcludedStrings,omitempty"`
 	//These specify sets of regular expressions that if matched on a path matched by the filepath key should be ignored. That is filepath_regex -> Set(regex)
 	//This is a quite versatile construct and can model the four above
 	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex,omitempty"`
+}
+
+//GenerateSampleExclusion generates a sample exclusion YAML file content with descriptions
+func GenerateSampleExclusion() string {
+	return `
+# This is a sample Exclusion YAML file to specify patterns of directories, files and values
+# to exclude while searching for secrets
+
+# Use GloballyExcludedRegExs to specify regular expressions of matching strings that should be ignored as secrets anywhere they are found
+# For example (uncomment the next three lines):
+# GloballyExcludedRegExs:
+#    - .*keyword.* #ignore any value with the word keyword in it 
+#    - .*public.*  #ignore any value with the word public in it 
+#
+
+# Use GloballyExcludedStrings to specify strings that should be ignored as secrets anywhere they are found
+# For example (uncomment the next three lines):
+# GloballyExcludedStrings:
+#    - NotAPassword
+#    - "Another non-password"
+#
+
+# Use PathExclusionRegExs to specify regular expressions that ignore files and directories, which if matched should not be scanned for secrets
+# For example (uncomment the next five lines):
+# PathExclusionRegExs:
+#     - .*/ignore/subpath/.* # ignore files and directories which contain the subpath '/ignore/subpath/' in its name
+#     - .*/README.md # ignore the file README.md wherever it may be found
+#     - .*/package-lock.json # ignore package-lock.json files wherever they are found
+#     - .*[.]html? # ignore all HTML files (ending with extension .html or .htm)
+
+
+# Use PerFileExcludedStrings to specify strings that should be excluded in a given file (indicated by its full path)
+# For example (uncomment the next six lines):
+# PerFileExcludedStrings:
+#     /home/user/myfile.txt: #file of interest
+#         - "ignore this value" # a value to ignore in the file
+#         - "another value" # another value to ignore in the file /home/user/myfile.txt
+#     "/home/user/second file.txt": #another file of interest
+#         - "not interesting" #ignore this value in the file
+
+# PathRegexExcludedRegex is a versatile path/directory and value regular expression-based exclusion config. 
+# Use it to simultaneously specify both path and value of non-interest to ignore.
+# For example (uncomment the next six lines):
+# PathRegexExcludedRegex:
+#     .*/ignore/subpath/.*: #ignore all files and directories that have this subpath in their name
+#         - .*public_key.* #ignore values that contain the phrase public_key
+#         - "not secret" #ignore value 'not secret'
+#     .*/keyword/directory/.*: #another path we'd like to target for ignoring certain values
+#         - .*keyword.* #ignore any value with the word keyword in it in any file whose path contains subpath '/keyword/directory/'
+
+`
 }
 
 //defaultExclusionProvider contains various mechanisms for excluding false positives
@@ -48,7 +99,7 @@ func CompileExcludes(exclude *ExcludeDefinition) (ExclusionProvider, error) {
 	return &wl, nil
 }
 
-//MakeEmptyExcludes creates an empty default exclude list
+//MakeEmptyExcludes creates an empty default exclusion list
 func MakeEmptyExcludes() ExclusionProvider {
 	return &defaultExclusionProvider{
 		ExcludeDefinition: &ExcludeDefinition{
