@@ -25,8 +25,18 @@ type SecurityDiagnostic struct {
 	//Location is an optional value that could contain filepath or URI of resource that this diagnostic applies to
 	Location *string `json:"location,omitempty"`
 	//used for identifying the source of the diagnostics
-	ProviderID *string `json:"providerID,omitempty"`
-	Excluded   bool    //indicates whether or not this diagnostics has been excluded
+	ProviderID *string   `json:"providerID,omitempty"`
+	Excluded   bool      //indicates whether or not this diagnostics has been excluded
+	Tags       *[]string `json:"tags,omitempty"` //optionally annotate diagnostic with tags, e.g. "test"
+}
+
+//AddTag adds a tag to the diagnostic
+func (sd *SecurityDiagnostic) AddTag(tag string) {
+	if sd.Tags == nil {
+		sd.Tags = &[]string{tag}
+	} else {
+		*sd.Tags = append(*sd.Tags, tag)
+	}
 }
 
 //GoString stringify
