@@ -48,7 +48,7 @@ func FindFiles(paths []string) (result []string) {
 	return
 }
 func getFiles(dir string) (paths []string) {
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	filepath.WalkDir(dir, func(path string, info os.DirEntry, err error) error {
 		if err != nil {
 			return filepath.SkipDir
 		}

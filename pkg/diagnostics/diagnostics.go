@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"strings"
 
 	"github.com/adedayo/checkmate-core/pkg/code"
 	"golang.org/x/text/encoding/unicode"
@@ -91,23 +92,18 @@ func (conf Confidence) MarshalJSON() ([]byte, error) {
 	return json.Marshal(conf.String())
 }
 
-//UnmarshalJSON makes a string representation of the confidence
+//UnmarshalJSON unmarshals a string representation of the confidence to Confidence
 func (conf *Confidence) UnmarshalJSON(data []byte) error {
-	if err := json.Unmarshal(data, conf); err != nil {
-		var c string
-		if err := json.Unmarshal(data, &c); err != nil {
-			return err
-		}
-		switch c {
-		case Low.String():
-			*conf = Low
-		case Medium.String():
-			*conf = Medium
-		case High.String():
-			*conf = High
-		default:
-			return fmt.Errorf(`Unknown Confidence type: "%s"`, c)
-		}
+	cc := strings.Trim(string(data), `"`)
+	switch cc {
+	case Low.String():
+		*conf = Low
+	case Medium.String():
+		*conf = Medium
+	case High.String():
+		*conf = High
+	default:
+		return fmt.Errorf(`unknown confidence type: %s`, cc)
 	}
 	return nil
 }
@@ -128,12 +124,12 @@ type Justification struct {
 type SecurityDiagnosticsProvider interface {
 	//AddConsumers adds consumers to be notified by this provider when there is a new diagnostics
 	AddConsumers(consumers ...SecurityDiagnosticsConsumer)
-	Broadcast(diagnostic SecurityDiagnostic)
+	Broadcast(diagnostic *SecurityDiagnostic)
 }
 
 //SecurityDiagnosticsConsumer is an interface with a callback to receive security diagnostics
 type SecurityDiagnosticsConsumer interface {
-	ReceiveDiagnostic(diagnostic SecurityDiagnostic)
+	ReceiveDiagnostic(diagnostic *SecurityDiagnostic)
 }
 
 //DefaultSecurityDiagnosticsProvider a default implementation
@@ -147,7 +143,7 @@ func (sdp *DefaultSecurityDiagnosticsProvider) AddConsumers(consumers ...Securit
 }
 
 //Broadcast sends diagnostics to all registered consumers
-func (sdp *DefaultSecurityDiagnosticsProvider) Broadcast(diagnostics SecurityDiagnostic) {
+func (sdp *DefaultSecurityDiagnosticsProvider) Broadcast(diagnostics *SecurityDiagnostic) {
 	//ensure that the source, if provided, is converted to UTF-8
 	if diagnostics.Source != nil {
 		r := transform.NewReader(bytes.NewBufferString(*diagnostics.Source), unicode.UTF8.NewDecoder())

@@ -144,7 +144,7 @@ type ResourceToSecurityDiagnostics interface {
 }
 
 //RegisterDiagnosticsConsumer registers a callback to consume diagnostics
-func RegisterDiagnosticsConsumer(callback func(d diagnostics.SecurityDiagnostic), providers ...diagnostics.SecurityDiagnosticsProvider) {
+func RegisterDiagnosticsConsumer(callback func(d *diagnostics.SecurityDiagnostic), providers ...diagnostics.SecurityDiagnosticsProvider) {
 	consumer := c{
 		callback: callback,
 	}
@@ -154,29 +154,29 @@ func RegisterDiagnosticsConsumer(callback func(d diagnostics.SecurityDiagnostic)
 }
 
 type c struct {
-	callback func(d diagnostics.SecurityDiagnostic)
+	callback func(d *diagnostics.SecurityDiagnostic)
 }
 
-func (n c) ReceiveDiagnostic(diagnostic diagnostics.SecurityDiagnostic) {
+func (n c) ReceiveDiagnostic(diagnostic *diagnostics.SecurityDiagnostic) {
 	n.callback(diagnostic)
 }
 
 //DiagnosticsAggregator implements a strategy for aggregating diagnostics, e.g. removing duplicates, overlap, less sever issues etc.
 type DiagnosticsAggregator interface {
-	AddDiagnostic(diagnostic diagnostics.SecurityDiagnostic)
-	Aggregate() []diagnostics.SecurityDiagnostic //Called when aggregation strategy is required to be run
+	AddDiagnostic(diagnostic *diagnostics.SecurityDiagnostic)
+	Aggregate() []*diagnostics.SecurityDiagnostic //Called when aggregation strategy is required to be run
 }
 
 type simpleDiagnosticAggregator struct {
 	// input       chan diagnostics.SecurityDiagnostic
-	diagnostics []diagnostics.SecurityDiagnostic
+	diagnostics []*diagnostics.SecurityDiagnostic
 }
 
-func (sda *simpleDiagnosticAggregator) AddDiagnostic(diagnostic diagnostics.SecurityDiagnostic) {
+func (sda *simpleDiagnosticAggregator) AddDiagnostic(diagnostic *diagnostics.SecurityDiagnostic) {
 	sda.diagnostics = append(sda.diagnostics, diagnostic)
 }
 
-func (sda *simpleDiagnosticAggregator) Aggregate() (agg []diagnostics.SecurityDiagnostic) {
+func (sda *simpleDiagnosticAggregator) Aggregate() (agg []*diagnostics.SecurityDiagnostic) {
 	excluded := make(map[int]bool)
 	diagnostics := sda.diagnostics
 	for i, di := range diagnostics {

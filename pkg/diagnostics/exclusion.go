@@ -30,8 +30,7 @@ type ExcludeDefinition struct {
 
 //GenerateSampleExclusion generates a sample exclusion YAML file content with descriptions
 func GenerateSampleExclusion() string {
-	return `
-# This is a sample Exclusion YAML file to specify patterns of directories, files and values
+	return `# This is a sample Exclusion YAML file to specify patterns of directories, files and values
 # to exclude while searching for secrets
 
 # Use GloballyExcludedRegExs to specify regular expressions of matching strings that should be ignored as secrets anywhere they are found
@@ -75,7 +74,6 @@ func GenerateSampleExclusion() string {
 #         - "not secret" #ignore value 'not secret'
 #     .*/keyword/directory/.*: #another path we'd like to target for ignoring certain values
 #         - .*keyword.* #ignore any value with the word keyword in it in any file whose path contains subpath '/keyword/directory/'
-
 `
 }
 
