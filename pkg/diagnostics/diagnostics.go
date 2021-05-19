@@ -15,9 +15,9 @@ import (
 
 //SecurityDiagnostic describes a security issue
 type SecurityDiagnostic struct {
-	Justification  Justification
-	Range          code.Range
-	HighlightRange code.Range
+	Justification  Justification `json:"justification,omitempty"`
+	Range          code.Range    `json:"range,omitempty"`
+	HighlightRange code.Range    `json:"highlightRange,omitempty"`
 	//Source code evidence optionally provided
 	Source *string `json:"source,omitempty"`
 	//SHA256 checksum is an optional SHA256 hash of the secret. High-security environments
@@ -110,14 +110,14 @@ func (conf *Confidence) UnmarshalJSON(data []byte) error {
 
 //Evidence is an atomic piece of information that describes a security diagnostics
 type Evidence struct {
-	Description string
-	Confidence  Confidence
+	Description string     `json:"description,omitempty"`
+	Confidence  Confidence `json:"confidence,omitempty"`
 }
 
 //Justification describes why a piece of security diagnostic has been generated
 type Justification struct {
-	Headline Evidence   //Headline evidence
-	Reasons  []Evidence //sub-reasons that justify why this is an issue
+	Headline Evidence   `json:"headline,omitempty"` //Headline evidence
+	Reasons  []Evidence `json:"reasons,omitempty"`  //sub-reasons that justify why this is an issue
 }
 
 //SecurityDiagnosticsProvider interface for security diagnostics providers

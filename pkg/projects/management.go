@@ -2,11 +2,13 @@ package projects
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
@@ -29,7 +31,7 @@ type ProjectManager interface {
 	GetProject(id string) Project //if project does not exist, we get an "empty" struct. Check the ID=id in client
 	GetScanConfig(projectID, scanID string) ScanPolicy
 	GetScanResults(projectID, scanID string) []*diagnostics.SecurityDiagnostic
-	GetScanResultSummary(projectID, scanID string) interface{}
+	GetScanResultSummary(projectID, scanID string) ScanSummary
 	// SummariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) error
 	RunScan(projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
 		scanIDCallback func(string), progressMonitor func(diagnostics.Progress),
@@ -38,6 +40,8 @@ type ProjectManager interface {
 
 	CreateProject(projectDescription ProjectDescription) Project
 	UpdateProject(projectID string, projectDescription ProjectDescription) Project
+	GetIssues(paginated PaginatedIssueSearch) PagedResult
+	RemediateIssue(exclude diagnostics.ExcludeRequirement) diagnostics.PolicyUpdateResult
 }
 
 func MakeSimpleProjectManager() ProjectManager {
@@ -54,6 +58,144 @@ func MakeSimpleProjectManager() ProjectManager {
 
 type simpleProjectManager struct {
 	projectsLocation string
+}
+
+func (spm simpleProjectManager) RemediateIssue(
+	exclude diagnostics.ExcludeRequirement) (result diagnostics.PolicyUpdateResult) {
+
+	projectID := exclude.ProjectID
+	issue := exclude.Issue
+	project := spm.GetProject(projectID)
+	if projectID != project.ID {
+		result.Status = "fail - no such project"
+		return
+	}
+
+	scanPolicy := project.ScanPolicy
+
+	updatePolicy := func() {
+		spm.UpdateProject(project.ID, ProjectDescription{
+			Name:         project.Name,
+			Repositories: project.Repositories,
+			ScanPolicy:   scanPolicy,
+		})
+		policy, err := json.Marshal(scanPolicy.Policy)
+		if err != nil {
+			result.Status = "fail = error marshalling new policy"
+			return
+		}
+		result.Status = "success"
+		result.NewPolicy = string(policy)
+	}
+
+	getFPString := func() (string, error) {
+		if issue.Source == nil {
+			result.Status = "fail - no source to exclude"
+			return "", fmt.Errorf(result.Status)
+		}
+		source := *issue.Source
+		start := issue.HighlightRange.Start
+		end := issue.HighlightRange.End
+		lines := strings.Split(source, "\n")
+
+		if start.Line == end.Line {
+			//same line
+			begin := issue.Range.Start.Line - start.Line
+			line := lines[begin][start.Character:end.Character]
+			return line, nil
+		} else {
+			begin := issue.Range.Start.Line - start.Line
+			stop := issue.Range.Start.Line - end.Line
+			ll := lines[begin : stop+1]
+			ll[0] = ll[0][start.Character:]
+			lastIndex := len(ll) - 1
+			ll[lastIndex] = ll[lastIndex][:end.Character+1]
+			return strings.Join(ll, "\n"), nil
+		}
+	}
+
+	//attempt to make an exclusion regex that is portable across systems
+	getCanonicalPath := func(path string) string {
+		for _, base := range project.Repositories {
+			if strings.HasPrefix(path, base.Location) {
+				return strings.TrimPrefix(path, base.Location)
+			}
+		}
+		return path
+	}
+
+	switch exclude.What {
+	case "ignore_here":
+		data, err := getFPString()
+		if err != nil {
+			result.Status = err.Error()
+			return
+		}
+		file := getCanonicalPath(*issue.Location)
+		if x, present := scanPolicy.Policy.PerFileExcludedStrings[file]; present {
+			scanPolicy.Policy.PerFileExcludedStrings[file] = append(x, data)
+		} else {
+			scanPolicy.Policy.PerFileExcludedStrings[file] = []string{data}
+		}
+		updatePolicy()
+	case "ignore_everywhere":
+		data, err := getFPString()
+		if err != nil {
+			result.Status = err.Error()
+			return
+		}
+		scanPolicy.Policy.GloballyExcludedStrings = append(scanPolicy.Policy.GloballyExcludedStrings, data)
+		updatePolicy()
+	case "ignore_file":
+		if issue.Location == nil {
+			result.Status = "fail - file to exclude not supplied"
+			return
+		}
+		loc := fmt.Sprintf(".*%s", getCanonicalPath(*issue.Location))
+		scanPolicy.Policy.PathExclusionRegExs = append(scanPolicy.Policy.PathExclusionRegExs, loc)
+		updatePolicy()
+	default:
+		result.Status = "fail"
+	}
+
+	return
+
+}
+
+//GetIssues returns issues page-by-page according to specified page size. A page
+//size of 0 returns all issues
+func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedResult {
+
+	results := spm.GetScanResults(paginated.ProjectID, paginated.ScanID)
+
+	if paginated.PageSize == 0 {
+		return PagedResult{
+			Total:       len(results),
+			Page:        0,
+			Diagnostics: results,
+		}
+	}
+
+	location := paginated.Page * paginated.PageSize
+	length := len(results)
+	issues := make([]*diagnostics.SecurityDiagnostic, 0)
+	//we could have simply calculated the required range and taken the slice out of results
+	//however in anticipation of filters e.g. only get "High" confidence results, the iteration
+	//approach seems reasonable
+	for {
+		if length > location && len(issues) < paginated.PageSize {
+			issues = append(issues, results[location])
+			location++
+		} else {
+			break
+		}
+	}
+
+	return PagedResult{
+		Total:       len(results),
+		Page:        paginated.Page,
+		Diagnostics: issues,
+	}
 }
 
 func (spm simpleProjectManager) CreateProject(projectDescription ProjectDescription) (project Project) {
@@ -77,7 +219,7 @@ func (spm simpleProjectManager) GetProject(id string) (project Project) {
 	if dirs, err := os.ReadDir(spm.projectsLocation); err == nil {
 		for _, dir := range dirs {
 			if dir.IsDir() && dir.Name() == id {
-				return loadProject(path.Join(spm.projectsLocation, dir.Name()))
+				return spm.loadProject(dir.Name())
 			}
 		}
 	}
@@ -113,13 +255,14 @@ func (spm simpleProjectManager) summariseScanResults(projectID, scanID string, s
 	return out, yaml.NewEncoder(scanSummaryFile).Encode(out)
 }
 
-func (spm simpleProjectManager) GetScanResultSummary(projectID, scanID string) (out interface{}) {
-	scanSummaryFile, err := os.Open(path.Join(spm.projectsLocation, projectID, scanID, defaultScanSummaryFile))
+func (spm simpleProjectManager) GetScanResultSummary(projectID, scanID string) (summary ScanSummary) {
+	file, err := os.Open(path.Join(spm.projectsLocation, projectID, scanID, defaultScanSummaryFile))
 	if err != nil {
+		log.Printf("Error loading scan summary: %s, %e", err.Error(), err)
 		return
 	}
-	defer scanSummaryFile.Close()
-	yaml.NewDecoder(scanSummaryFile).Decode(out)
+	defer file.Close()
+	yaml.NewDecoder(file).Decode(&summary)
 	return
 }
 
@@ -133,8 +276,8 @@ func (spm simpleProjectManager) GetScanConfig(projID, scanID string) (config Sca
 	return
 }
 
-func loadProject(projPath string) (proj Project) {
-	data, err := os.ReadFile(path.Join(projPath, defaultProjectFile))
+func (spm simpleProjectManager) loadProject(projID string) (proj Project) {
+	data, err := os.ReadFile(path.Join(spm.projectsLocation, projID, defaultProjectFile))
 	if err == nil {
 		if yaml.Unmarshal(data, &proj) != nil {
 			return Project{}
@@ -151,14 +294,31 @@ func (spm simpleProjectManager) GetProjectSummary(projID string) (summary Projec
 			return ProjectSummary{}
 		}
 	}
+	//if everything goes well. Load the retrieve the scan results series
+	summary.LastScore.SubMetrics = spm.loadHistoricalScores(projID)
+	summary.LastScanSummary = spm.loadLastScanSummary(projID)
 	return
 }
 
-func (spm simpleProjectManager) loadLastScanSummary(projID, scanID string) (summary ScanSummary) {
-	if file, err := os.Open(path.Join(spm.projectsLocation, projID, scanID, defaultScanSummaryFile)); err == nil {
-		yaml.NewDecoder(file).Decode(&summary)
-	} else {
-		log.Printf("Error loading scan summary: %s", err.Error())
+func (spm simpleProjectManager) loadHistoricalScores(projID string) map[string]float32 {
+	out := make(map[string]float32)
+	for _, scanID := range spm.GetProject(projID).ScanIDs {
+		summary := spm.GetScanResultSummary(projID, scanID)
+		out[summary.Score.TimeStamp.String()] = summary.Score.Metric
+	}
+	return out
+}
+
+func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary ScanSummary) {
+	project := spm.loadProject(projID)
+
+	if len(project.ScanIDs) > 0 {
+		scanID := project.ScanIDs[len(project.ScanIDs)-1]
+		if file, err := os.Open(path.Join(spm.projectsLocation, projID, scanID, defaultScanSummaryFile)); err == nil {
+			yaml.NewDecoder(file).Decode(&summary)
+		} else {
+			log.Printf("Error loading scan summary: %s", err.Error())
+		}
 	}
 	return
 }
@@ -194,7 +354,6 @@ func (spm simpleProjectManager) RunScan(projectID string, scanPolicy ScanPolicy,
 		project := spm.GetProject(projectID)
 		spm.saveProject(project, projectStatus{scanned: true, scanID: scanID, scanTime: out.Score.TimeStamp})
 	}
-
 }
 
 func (spm simpleProjectManager) UpdateProject(projectID string, projectDescription ProjectDescription) (project Project) {
@@ -273,7 +432,7 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 			if status.scanned {
 				summary.LastScanID = status.scanID
 				summary.LastScan = status.scanTime
-				scanSummary := spm.loadLastScanSummary(project.ID, status.scanID)
+				scanSummary := spm.GetScanResultSummary(project.ID, status.scanID)
 				if scanSummary.Score.TimeStamp.Equal(status.scanTime) { //use this to gate errors in (de)serialisation
 					summary.LastScore = scanSummary.Score
 				} else {

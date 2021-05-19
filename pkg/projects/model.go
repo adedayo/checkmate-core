@@ -69,7 +69,7 @@ type ScanPolicyWire struct {
 type ScanPolicy struct {
 	ID     string                        `yaml:"ID"`
 	Policy diagnostics.ExcludeDefinition `yaml:"Policy,omitempty"`
-	Config map[string]interface{}        //indexes to scan configurations, key secrets for secret finder
+	Config map[string]interface{}        //indexes to scan configurations, use the key "secrets" for secret finder
 }
 
 type ProjectSummary struct {
@@ -77,6 +77,7 @@ type ProjectSummary struct {
 	Name             string       `yaml:"Name"`
 	Repositories     []Repository `yaml:"Repositories,omitempty"`
 	LastScanID       string       `yaml:"LastScanID"`
+	LastScanSummary  ScanSummary  `yaml:"LastScanSummary"`
 	LastScore        scores.Score `yaml:"LastScore"`
 	IsBeingScanned   bool         `yaml:"IsBeingScanned"`
 	CreationDate     time.Time    `yaml:"CreationDate"`
@@ -87,4 +88,17 @@ type ProjectSummary struct {
 type ScanSummary struct {
 	Score          scores.Score
 	AdditionalInfo interface{}
+}
+
+type PaginatedIssueSearch struct {
+	ProjectID string
+	ScanID    string
+	PageSize  int
+	Page      int
+}
+
+type PagedResult struct {
+	Total       int
+	Page        int
+	Diagnostics []*diagnostics.SecurityDiagnostic
 }

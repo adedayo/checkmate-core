@@ -28,6 +28,17 @@ type ExcludeDefinition struct {
 	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex,omitempty"`
 }
 
+type ExcludeRequirement struct {
+	What      string
+	Issue     SecurityDiagnostic
+	ProjectID string
+}
+
+type PolicyUpdateResult struct {
+	Status    string
+	NewPolicy string
+}
+
 //GenerateSampleExclusion generates a sample exclusion YAML file content with descriptions
 func GenerateSampleExclusion() string {
 	return `# This is a sample Exclusion YAML file to specify patterns of directories, files and values
