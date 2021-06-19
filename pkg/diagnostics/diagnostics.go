@@ -31,6 +31,69 @@ type SecurityDiagnostic struct {
 	Tags       *[]string `json:"tags,omitempty"` //optionally annotate diagnostic with tags, e.g. "test"
 }
 
+//HasTag cheks whether diagnostic has the specified tag
+func (sd *SecurityDiagnostic) HasTag(tag string) bool {
+	if sd.Tags == nil {
+		return false
+	}
+	for _, t := range *sd.Tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+//TODO this does not currently work well as expected
+func (sd *SecurityDiagnostic) GetValue() string {
+	if sd.Source == nil || *sd.Source == "" {
+		return ""
+	}
+
+	lines := strings.Split(*sd.Source, "\n")
+
+	r := sd.Range
+	hr := sd.HighlightRange
+
+	begin := int(hr.Start.Character)
+
+	if hr.Start.Line == r.Start.Line {
+		begin -= int(r.Start.Character)
+	} else {
+		lineDiff := hr.Start.Line - r.Start.Line
+		for i, l := range lines {
+			if i < int(lineDiff) {
+				begin += len(l) + 1 //+1 is the newline character
+			}
+		}
+	}
+
+	end := int(hr.End.Character) //end index not inclusive
+
+	if hr.End.Line == r.Start.Line {
+		end -= int(r.Start.Character)
+	} else {
+		lineDiff := hr.End.Line - r.Start.Line
+		for i, l := range lines {
+			if i < int(lineDiff) {
+				end += len(l) + 1 //+1 is the newline character
+			}
+		}
+	}
+
+	if begin > end || begin >= len(*sd.Source) {
+		//calculation is wrong somewhere, return everything
+		return *sd.Source
+	}
+
+	if end >= len(*sd.Source) {
+		//the index is broken. return till the end
+		return (*sd.Source)[begin:]
+	}
+
+	return (*sd.Source)[begin:end]
+}
+
 //AddTag adds a tag to the diagnostic
 func (sd *SecurityDiagnostic) AddTag(tag string) {
 	if sd.Tags == nil {
@@ -61,8 +124,10 @@ func adjustRange(in code.Range) (out code.Range) {
 type Confidence int
 
 const (
+	//informational Confidence in the assessment
+	Info Confidence = iota
 	//Low Confidence in the assessment
-	Low Confidence = iota
+	Low
 	//Medium Confidence in the assessment
 	Medium
 	//High Confidence in the assessment
@@ -71,6 +136,8 @@ const (
 
 func (conf Confidence) String() string {
 	switch conf {
+	case Info:
+		return "Info"
 	case Low:
 		return "Low"
 	case Medium:

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,7 +32,7 @@ type ProjectManager interface {
 	GetProject(id string) Project //if project does not exist, we get an "empty" struct. Check the ID=id in client
 	GetScanConfig(projectID, scanID string) ScanPolicy
 	GetScanResults(projectID, scanID string) []*diagnostics.SecurityDiagnostic
-	GetScanResultSummary(projectID, scanID string) ScanSummary
+	GetScanResultSummary(projectID, scanID string) (ScanSummary, error)
 	// SummariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) error
 	RunScan(projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
 		scanIDCallback func(string), progressMonitor func(diagnostics.Progress),
@@ -42,6 +43,8 @@ type ProjectManager interface {
 	UpdateProject(projectID string, projectDescription ProjectDescription) Project
 	GetIssues(paginated PaginatedIssueSearch) PagedResult
 	RemediateIssue(exclude diagnostics.ExcludeRequirement) diagnostics.PolicyUpdateResult
+	GetProjectLocation(projID string) string
+	GetScanLocation(projID, scanID string) string
 }
 
 func MakeSimpleProjectManager() ProjectManager {
@@ -58,6 +61,14 @@ func MakeSimpleProjectManager() ProjectManager {
 
 type simpleProjectManager struct {
 	projectsLocation string
+}
+
+func (spm simpleProjectManager) GetProjectLocation(projID string) string {
+	return path.Join(spm.projectsLocation, projID)
+}
+
+func (spm simpleProjectManager) GetScanLocation(projID, scanID string) string {
+	return path.Join(spm.projectsLocation, projID, scanID)
 }
 
 func (spm simpleProjectManager) RemediateIssue(
@@ -79,7 +90,7 @@ func (spm simpleProjectManager) RemediateIssue(
 			Repositories: project.Repositories,
 			ScanPolicy:   scanPolicy,
 		})
-		policy, err := json.Marshal(scanPolicy.Policy)
+		policy, err := yaml.Marshal(scanPolicy.Policy)
 		if err != nil {
 			result.Status = "fail = error marshalling new policy"
 			return
@@ -101,7 +112,12 @@ func (spm simpleProjectManager) RemediateIssue(
 		if start.Line == end.Line {
 			//same line
 			begin := issue.Range.Start.Line - start.Line
-			line := lines[begin][start.Character:end.Character]
+			x := start.Character - issue.Range.Start.Character
+			y := end.Character - issue.Range.Start.Character
+			fmt.Printf("%d, %s, %d, %d \n", begin, lines[begin], start.Character, end.Character)
+
+			line := lines[begin][x:y]
+			fmt.Printf("%s\n", line)
 			return line, nil
 		} else {
 			begin := issue.Range.Start.Line - start.Line
@@ -132,6 +148,9 @@ func (spm simpleProjectManager) RemediateIssue(
 			return
 		}
 		file := getCanonicalPath(*issue.Location)
+		if scanPolicy.Policy.PerFileExcludedStrings == nil {
+			scanPolicy.Policy.PerFileExcludedStrings = make(map[string][]string)
+		}
 		if x, present := scanPolicy.Policy.PerFileExcludedStrings[file]; present {
 			scanPolicy.Policy.PerFileExcludedStrings[file] = append(x, data)
 		} else {
@@ -176,6 +195,35 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 		}
 	}
 
+	filterConfidence := false
+	confidenceValues := map[string]bool{}
+	if len(paginated.Filter.Confidence) > 0 {
+		filterConfidence = true
+		for _, c := range paginated.Filter.Confidence {
+			c = strings.ToLower(c)
+			if c == "med" {
+				c = "medium" //medium is not abbreviated in the GoString value of confidence
+			}
+			confidenceValues[c] = true
+		}
+	}
+
+	includeTest := false
+	includeProd := false
+	if len(paginated.Filter.Tags) > 0 {
+		for _, tag := range paginated.Filter.Tags {
+			if strings.ToLower(tag) == "test" {
+				includeTest = true
+			}
+			if strings.ToLower(tag) == "prod" {
+				includeProd = true
+			}
+		}
+	} else {
+		includeTest = true
+		includeProd = true
+	}
+
 	location := paginated.Page * paginated.PageSize
 	length := len(results)
 	issues := make([]*diagnostics.SecurityDiagnostic, 0)
@@ -184,7 +232,20 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 	//approach seems reasonable
 	for {
 		if length > location && len(issues) < paginated.PageSize {
-			issues = append(issues, results[location])
+			issue := results[location]
+			isTest := issue.HasTag("test")
+			if filterConfidence {
+				conf := strings.ToLower(issue.Justification.Headline.Confidence.GoString())
+				if _, present := confidenceValues[conf]; present {
+					if (includeTest && isTest) || (includeProd && !isTest) {
+						issues = append(issues, issue)
+					}
+				}
+			} else {
+				if (includeTest && isTest) || (includeProd && !isTest) {
+					issues = append(issues, issue)
+				}
+			}
 			location++
 		} else {
 			break
@@ -255,15 +316,18 @@ func (spm simpleProjectManager) summariseScanResults(projectID, scanID string, s
 	return out, yaml.NewEncoder(scanSummaryFile).Encode(out)
 }
 
-func (spm simpleProjectManager) GetScanResultSummary(projectID, scanID string) (summary ScanSummary) {
+func (spm simpleProjectManager) GetScanResultSummary(projectID, scanID string) (ScanSummary, error) {
+	var summary ScanSummary
 	file, err := os.Open(path.Join(spm.projectsLocation, projectID, scanID, defaultScanSummaryFile))
 	if err != nil {
-		log.Printf("Error loading scan summary: %s, %e", err.Error(), err)
-		return
+		//sometimes the scan has not been run/completed. This is not unusual
+		// log.Printf("Error loading scan summary: %s", err.Error())
+		return summary, err
 	}
 	defer file.Close()
+
 	yaml.NewDecoder(file).Decode(&summary)
-	return
+	return summary, nil
 }
 
 func (spm simpleProjectManager) GetScanConfig(projID, scanID string) (config ScanPolicy) {
@@ -300,12 +364,47 @@ func (spm simpleProjectManager) GetProjectSummary(projID string) (summary Projec
 	return
 }
 
+type data struct {
+	timeStamp time.Time
+	scanID    string
+	score     float32
+}
+
+type dataSlice []data
+
+func (t dataSlice) Len() int {
+	return len(t)
+}
+
+func (t dataSlice) Less(i, j int) bool {
+	return t[i].timeStamp.Before(t[j].timeStamp)
+}
+
+func (t dataSlice) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
+}
+
 func (spm simpleProjectManager) loadHistoricalScores(projID string) map[string]float32 {
 	out := make(map[string]float32)
+	sortedData := make(dataSlice, 0)
+
 	for _, scanID := range spm.GetProject(projID).ScanIDs {
-		summary := spm.GetScanResultSummary(projID, scanID)
-		out[summary.Score.TimeStamp.String()] = summary.Score.Metric
+		summary, err := spm.GetScanResultSummary(projID, scanID)
+		if err == nil {
+			sortedData = append(sortedData, data{
+				timeStamp: summary.Score.TimeStamp,
+				scanID:    scanID,
+				score:     summary.Score.Metric,
+			})
+		}
 	}
+
+	sort.Sort(sortedData)
+
+	for _, d := range sortedData {
+		out[fmt.Sprintf("%s;%s", d.scanID, d.timeStamp.Format(time.RFC3339))] = d.score
+	}
+
 	return out
 }
 
@@ -317,7 +416,8 @@ func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary Scan
 		if file, err := os.Open(path.Join(spm.projectsLocation, projID, scanID, defaultScanSummaryFile)); err == nil {
 			yaml.NewDecoder(file).Decode(&summary)
 		} else {
-			log.Printf("Error loading scan summary: %s", err.Error())
+			//sometimes the scan has not been run/completed. This is not unusual
+			// log.Printf("Error loading scan summary: %s", err.Error())
 		}
 	}
 	return
@@ -338,8 +438,11 @@ func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSumma
 	return
 }
 
-func (spm simpleProjectManager) RunScan(projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
-	scanIDCallback func(string), progressMonitor func(diagnostics.Progress),
+func (spm simpleProjectManager) RunScan(projectID string,
+	scanPolicy ScanPolicy,
+	scanner SecurityScanner,
+	scanIDCallback func(string),
+	progressMonitor func(diagnostics.Progress),
 	summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary,
 	consumers ...diagnostics.SecurityDiagnosticsConsumer) {
 	scanID := spm.createScan(projectID, scanPolicy)
@@ -363,8 +466,10 @@ func (spm simpleProjectManager) UpdateProject(projectID string, projectDescripti
 		proj.Name = projectDescription.Name
 		proj.Repositories = projectDescription.Repositories
 		policy := ScanPolicy{
-			ID:     util.NewRandomUUID().String(),
-			Policy: projectDescription.ScanPolicy.Policy,
+			ID:           util.NewRandomUUID().String(),
+			Policy:       projectDescription.ScanPolicy.Policy,
+			Config:       projectDescription.ScanPolicy.Config,
+			PolicyString: projectDescription.ScanPolicy.PolicyString,
 		}
 		proj.ScanPolicy = policy
 		return spm.saveProject(proj, projectStatus{modified: true, modifiedTime: time.Now()})
@@ -392,7 +497,7 @@ func (spm simpleProjectManager) saveProjectSummary(summary ProjectSummary) error
 	return nil
 }
 
-func (spm simpleProjectManager) saveProject(project Project, status projectStatus) (_ Project) {
+func (spm simpleProjectManager) saveProject(project Project, status projectStatus) (pp Project) {
 
 	projectLoc := path.Join(spm.projectsLocation, project.ID)
 	if err := os.MkdirAll(projectLoc, 0755); err != nil {
@@ -408,13 +513,13 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 	if err != nil {
 		return
 	}
+
 	defer projFile.Close()
 	if _, err = projFile.Write(data); err != nil {
 		return
 	}
 
 	if status.created {
-
 		summary := ProjectSummary{
 			ID:           project.ID,
 			Name:         project.Name,
@@ -432,11 +537,13 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 			if status.scanned {
 				summary.LastScanID = status.scanID
 				summary.LastScan = status.scanTime
-				scanSummary := spm.GetScanResultSummary(project.ID, status.scanID)
-				if scanSummary.Score.TimeStamp.Equal(status.scanTime) { //use this to gate errors in (de)serialisation
-					summary.LastScore = scanSummary.Score
-				} else {
-					log.Printf("unable to load last score, %s, %s\n", scanSummary.Score.TimeStamp, status.scanTime)
+				scanSummary, err := spm.GetScanResultSummary(project.ID, status.scanID)
+				if err == nil {
+					if scanSummary.Score.TimeStamp.Equal(status.scanTime) { //use this to gate errors in (de)serialisation
+						summary.LastScore = scanSummary.Score
+					} else {
+						log.Printf("unable to load last score, %s, %s\n", scanSummary.Score.TimeStamp, status.scanTime)
+					}
 				}
 			}
 

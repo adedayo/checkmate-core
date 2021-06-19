@@ -16,16 +16,16 @@ type ExclusionProvider interface {
 // ExcludeDefinition describes exclude rules
 type ExcludeDefinition struct {
 	//These specify regular expressions of matching strings that should be ignored as secrets anywhere they are found
-	GloballyExcludedRegExs []string `yaml:"GloballyExcludedRegExs,omitempty"`
+	GloballyExcludedRegExs []string `yaml:"GloballyExcludedRegExs"`
 	//These specify strings that should be ignored as secrets anywhere they are found
-	GloballyExcludedStrings []string `yaml:"GloballyExcludedStrings,omitempty"`
+	GloballyExcludedStrings []string `yaml:"GloballyExcludedStrings"`
 	//These specify regular expressions that ignore files whose paths match
-	PathExclusionRegExs []string `yaml:"PathExclusionRegExs,omitempty"`
+	PathExclusionRegExs []string `yaml:"PathExclusionRegExs"`
 	//These specify sets of strings that should be excluded in a given file. That is filepath -> Set(strings)
-	PerFileExcludedStrings map[string][]string `yaml:"PerFileExcludedStrings,omitempty"`
+	PerFileExcludedStrings map[string][]string `yaml:"PerFileExcludedStrings"`
 	//These specify sets of regular expressions that if matched on a path matched by the filepath key should be ignored. That is filepath_regex -> Set(regex)
 	//This is a quite versatile construct and can model the four above
-	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex,omitempty"`
+	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex"`
 }
 
 type ExcludeRequirement struct {
@@ -194,6 +194,15 @@ func (wl *defaultExclusionProvider) ShouldExclude(pathContext, value string) boo
 		}
 	}
 
+	for prx, rxs := range wl.pathRegexExcludedRegExsCompiled {
+		if prx.MatchString(pathContext) {
+			for _, rx := range rxs {
+				if rx.MatchString(value) {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 

@@ -2,11 +2,13 @@ package projects
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
 	"github.com/adedayo/checkmate-core/pkg/scores"
+	"gopkg.in/yaml.v3"
 )
 
 type Project struct {
@@ -31,21 +33,36 @@ type ProjectDescriptionWire struct {
 	ScanPolicy   ScanPolicyWire `yaml:"ScanPolicy"`
 }
 
-func (desc ProjectDescriptionWire) ToProjectDescription() ProjectDescription {
+func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, error) {
+
 	var policy diagnostics.ExcludeDefinition
-	if err := json.Unmarshal([]byte(desc.ScanPolicy.Policy), &policy); err != nil {
-		log.Printf("Error parsing scan exclusion, reverting to default: %s", err.Error())
-		policy = diagnostics.ExcludeDefinition{}
-	}
-	return ProjectDescription{
+	pDesc := ProjectDescription{
 		Name:         desc.Name,
 		Repositories: desc.Repositories,
 		ScanPolicy: ScanPolicy{
 			ID:     desc.ScanPolicy.ID,
 			Config: desc.ScanPolicy.Config,
-			Policy: policy,
-		},
+			Policy: diagnostics.ExcludeDefinition{},
+		}}
+
+	if desc.ScanPolicy.PolicyString == "" {
+		return pDesc, nil
 	}
+
+	if err := yaml.Unmarshal([]byte(desc.ScanPolicy.PolicyString), &policy); err != nil {
+		log.Printf("Error parsing scan exclusion, reverting to default: %s", err.Error())
+		return ProjectDescription{
+			Name:         desc.Name,
+			Repositories: desc.Repositories,
+			ScanPolicy: ScanPolicy{
+				ID:           desc.ScanPolicy.ID,
+				Config:       desc.ScanPolicy.Config,
+				Policy:       diagnostics.ExcludeDefinition{},
+				PolicyString: desc.ScanPolicy.PolicyString,
+			}}, fmt.Errorf("error parsing scan exclusion, reverting to default: %s", err.Error())
+	}
+	pDesc.ScanPolicy.Policy = policy
+	return pDesc, nil
 }
 
 type Repository struct {
@@ -62,14 +79,37 @@ type Scan struct {
 }
 
 type ScanPolicyWire struct {
-	ID     string                 `yaml:"ID"`
-	Policy string                 `yaml:"Policy,omitempty"`
-	Config map[string]interface{} //indexes to scan configurations, key secrets for secret finder
+	ID           string `yaml:"ID"`
+	Policy       string `yaml:"Policy,omitempty"`
+	PolicyString string
+	Config       map[string]interface{} //indexes to scan configurations, key secrets for secret finder
 }
 type ScanPolicy struct {
-	ID     string                        `yaml:"ID"`
-	Policy diagnostics.ExcludeDefinition `yaml:"Policy,omitempty"`
-	Config map[string]interface{}        //indexes to scan configurations, use the key "secrets" for secret finder
+	ID           string                        `yaml:"ID"`
+	Policy       diagnostics.ExcludeDefinition `yaml:"Policy,omitempty"`
+	PolicyString string                        `yaml:"-"`
+	Config       map[string]interface{}        //indexes to scan configurations, use the key "secrets" for secret finder
+}
+
+func (sp ScanPolicy) MarshalJSON() ([]byte, error) {
+	type Alias ScanPolicy
+	policy, err := yaml.Marshal(sp.Policy)
+	if err != nil {
+		return []byte(err.Error()), err
+	}
+	pol := ""
+	if len(policy) == 0 {
+		pol = diagnostics.GenerateSampleExclusion()
+	} else {
+		pol = string(policy)
+	}
+	return json.Marshal(&struct {
+		*Alias
+		PolicyString string
+	}{
+		Alias:        (*Alias)(&sp),
+		PolicyString: pol,
+	})
 }
 
 type ProjectSummary struct {
@@ -85,6 +125,21 @@ type ProjectSummary struct {
 	LastScan         time.Time    `yaml:"LastScan"`
 }
 
+func (ps *ProjectSummary) MarshalJSON() ([]byte, error) {
+	type Alias ProjectSummary
+	return json.Marshal(&struct {
+		*Alias
+		CreationDate     string
+		LastModification string
+		LastScan         string
+	}{
+		Alias:            (*Alias)(ps),
+		CreationDate:     ps.CreationDate.Format(time.RFC3339),
+		LastModification: ps.LastModification.Format(time.RFC3339),
+		LastScan:         ps.LastScan.Format(time.RFC3339),
+	})
+}
+
 type ScanSummary struct {
 	Score          scores.Score
 	AdditionalInfo interface{}
@@ -95,8 +150,13 @@ type PaginatedIssueSearch struct {
 	ScanID    string
 	PageSize  int
 	Page      int
+	Filter    IssueFilter
 }
 
+type IssueFilter struct {
+	Confidence []string //high, med, low, info
+	Tags       []string //test, prod
+}
 type PagedResult struct {
 	Total       int
 	Page        int
