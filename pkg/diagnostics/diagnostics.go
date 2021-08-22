@@ -17,6 +17,7 @@ import (
 type SecurityDiagnostic struct {
 	Justification  Justification `json:"justification,omitempty"`
 	Range          code.Range    `json:"range,omitempty"`
+	RawRange       CharRange     `json:"rawRange,omitempty"`
 	HighlightRange code.Range    `json:"highlightRange,omitempty"`
 	//Source code evidence optionally provided
 	Source *string `json:"source,omitempty"`
@@ -46,52 +47,78 @@ func (sd *SecurityDiagnostic) HasTag(tag string) bool {
 
 //TODO this does not currently work well as expected
 func (sd *SecurityDiagnostic) GetValue() string {
-	if sd.Source == nil || *sd.Source == "" {
+
+	// if sd.Location != nil {
+	// 	log.Printf("Location:%s\n", *sd.Location)
+	// 	if file, err := os.Open(*sd.Location); err == nil {
+	// 		defer file.Close()
+	// 		file.Seek(sd.RawRange.StartIndex, io.SeekStart)
+	// 		buf := make([]byte, sd.RawRange.EndIndex-sd.RawRange.StartIndex)
+	// 		if _, err = file.ReadAt(buf, sd.RawRange.StartIndex); err == nil {
+	// 			val := string(buf)
+	// 			fmt.Printf("Value:%s\n", val)
+	// 			return val
+	// 		} else {
+	// 			log.Printf("%v\n", err)
+	// 		}
+	// 	} else {
+	// 		log.Printf("%v\n", err)
+	// 	}
+	// }
+	// return ""
+
+	if sd.Source == nil {
 		return ""
 	}
 
-	lines := strings.Split(*sd.Source, "\n")
+	return *sd.Source
 
-	r := sd.Range
-	hr := sd.HighlightRange
+	// if sd.Source == nil || *sd.Source == "" {
+	// 	return ""
+	// }
 
-	begin := int(hr.Start.Character)
+	// lines := strings.Split(*sd.Source, "\n")
 
-	if hr.Start.Line == r.Start.Line {
-		begin -= int(r.Start.Character)
-	} else {
-		lineDiff := hr.Start.Line - r.Start.Line
-		for i, l := range lines {
-			if i < int(lineDiff) {
-				begin += len(l) + 1 //+1 is the newline character
-			}
-		}
-	}
+	// r := sd.Range
+	// hr := sd.HighlightRange
 
-	end := int(hr.End.Character) //end index not inclusive
+	// begin := int(hr.Start.Character)
 
-	if hr.End.Line == r.Start.Line {
-		end -= int(r.Start.Character)
-	} else {
-		lineDiff := hr.End.Line - r.Start.Line
-		for i, l := range lines {
-			if i < int(lineDiff) {
-				end += len(l) + 1 //+1 is the newline character
-			}
-		}
-	}
+	// if hr.Start.Line == r.Start.Line {
+	// 	begin -= int(r.Start.Character)
+	// } else {
+	// 	lineDiff := hr.Start.Line - r.Start.Line
+	// 	for i, l := range lines {
+	// 		if i < int(lineDiff) {
+	// 			begin += len(l) + 1 //+1 is the newline character
+	// 		}
+	// 	}
+	// }
 
-	if begin > end || begin >= len(*sd.Source) {
-		//calculation is wrong somewhere, return everything
-		return *sd.Source
-	}
+	// end := int(hr.End.Character) //end index not inclusive
 
-	if end >= len(*sd.Source) {
-		//the index is broken. return till the end
-		return (*sd.Source)[begin:]
-	}
+	// if hr.End.Line == r.Start.Line {
+	// 	end -= int(r.Start.Character)
+	// } else {
+	// 	lineDiff := hr.End.Line - r.Start.Line
+	// 	for i, l := range lines {
+	// 		if i < int(lineDiff) {
+	// 			end += len(l) + 1 //+1 is the newline character
+	// 		}
+	// 	}
+	// }
 
-	return (*sd.Source)[begin:end]
+	// if begin > end || begin >= len(*sd.Source) {
+	// 	//calculation is wrong somewhere, return everything
+	// 	return *sd.Source
+	// }
+
+	// if end >= len(*sd.Source) {
+	// 	//the index is broken. return till the end
+	// 	return (*sd.Source)[begin:]
+	// }
+
+	// return (*sd.Source)[begin:end]
 }
 
 //AddTag adds a tag to the diagnostic
@@ -120,6 +147,11 @@ func adjustRange(in code.Range) (out code.Range) {
 	return
 }
 
+//CharRange describes the location in the file where a range of "text" is found
+type CharRange struct {
+	StartIndex, EndIndex int64
+}
+
 //Confidence reflects the degree of confidence that we have in an assessment
 type Confidence int
 
@@ -132,6 +164,8 @@ const (
 	Medium
 	//High Confidence in the assessment
 	High
+	//Critical Confidence in the assessment
+	Critical
 )
 
 func (conf Confidence) String() string {
@@ -144,6 +178,8 @@ func (conf Confidence) String() string {
 		return "Medium"
 	case High:
 		return "High"
+	case Critical:
+		return "Critical"
 	default:
 		return "Unknown"
 	}
@@ -163,12 +199,16 @@ func (conf Confidence) MarshalJSON() ([]byte, error) {
 func (conf *Confidence) UnmarshalJSON(data []byte) error {
 	cc := strings.Trim(string(data), `"`)
 	switch cc {
+	case Info.String():
+		*conf = Info
 	case Low.String():
 		*conf = Low
 	case Medium.String():
 		*conf = Medium
 	case High.String():
 		*conf = High
+	case Critical.String():
+		*conf = Critical
 	default:
 		return fmt.Errorf(`unknown confidence type: %s`, cc)
 	}
@@ -177,8 +217,8 @@ func (conf *Confidence) UnmarshalJSON(data []byte) error {
 
 //Evidence is an atomic piece of information that describes a security diagnostics
 type Evidence struct {
-	Description string     `json:"description,omitempty"`
-	Confidence  Confidence `json:"confidence,omitempty"`
+	Description string     `json:"description"`
+	Confidence  Confidence `json:"confidence"`
 }
 
 //Justification describes why a piece of security diagnostic has been generated

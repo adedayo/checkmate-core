@@ -11,9 +11,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Workspace struct {
+	Details map[string]*WorkspaceDetail `json:"Details" yaml:"Details"`
+}
+
+type WorkspaceDetail struct {
+	Summary          *ScanSummary     `json:"Summary" yaml:"Summary"`
+	ProjectSummaries []ProjectSummary `json:"ProjectSummaries" yaml:"ProjectSummaries"`
+}
+
 type Project struct {
-	ID           string       `yaml:"ID"`   //unique
-	Name         string       `yaml:"Name"` //human-friendly
+	ID           string       `yaml:"ID"`        //unique
+	Name         string       `yaml:"Name"`      //human-friendly
+	Workspace    string       `yaml:"Workspace"` //Used to group related projects
 	Repositories []Repository `yaml:"Repositories,omitempty"`
 	ScanIDs      []string     `yaml:"ScanIDs"`
 	ScanPolicy   ScanPolicy   `yaml:"ScanPolicy"`
@@ -23,6 +33,7 @@ type Project struct {
 type ProjectDescription struct {
 	Name         string       `yaml:"Name"` //human-friendly
 	Repositories []Repository `yaml:"Repositories,omitempty"`
+	Workspace    string       `yaml:"Workspace"` //Used to group related projects
 	ScanPolicy   ScanPolicy   `yaml:"ScanPolicy"`
 }
 
@@ -30,6 +41,7 @@ type ProjectDescription struct {
 type ProjectDescriptionWire struct {
 	Name         string         `yaml:"Name"` //human-friendly
 	Repositories []Repository   `yaml:"Repositories,omitempty"`
+	Workspace    string         `yaml:"Workspace"` //Used to group related projects
 	ScanPolicy   ScanPolicyWire `yaml:"ScanPolicy"`
 }
 
@@ -39,6 +51,7 @@ func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, e
 	pDesc := ProjectDescription{
 		Name:         desc.Name,
 		Repositories: desc.Repositories,
+		Workspace:    desc.Workspace,
 		ScanPolicy: ScanPolicy{
 			ID:     desc.ScanPolicy.ID,
 			Config: desc.ScanPolicy.Config,
@@ -54,6 +67,7 @@ func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, e
 		return ProjectDescription{
 			Name:         desc.Name,
 			Repositories: desc.Repositories,
+			Workspace:    desc.Workspace,
 			ScanPolicy: ScanPolicy{
 				ID:           desc.ScanPolicy.ID,
 				Config:       desc.ScanPolicy.Config,
@@ -115,6 +129,7 @@ func (sp ScanPolicy) MarshalJSON() ([]byte, error) {
 type ProjectSummary struct {
 	ID               string       `yaml:"ID"`
 	Name             string       `yaml:"Name"`
+	Workspace        string       `yaml:"Workspace"` //Used to group related projects
 	Repositories     []Repository `yaml:"Repositories,omitempty"`
 	LastScanID       string       `yaml:"LastScanID"`
 	LastScanSummary  ScanSummary  `yaml:"LastScanSummary"`

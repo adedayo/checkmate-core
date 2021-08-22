@@ -166,6 +166,7 @@ func (wl *defaultExclusionProvider) compileRegExs() error {
 //ShouldExclude determines whether the supplied value should be excluded based on its value and the
 //path (if any) of the source file providing additional context
 func (wl *defaultExclusionProvider) ShouldExclude(pathContext, value string) bool {
+	// fmt.Printf("Should exclude Path:%s, Value:%s\n", pathContext, value)
 	for _, s := range wl.GloballyExcludedStrings {
 		if s == value {
 			return true

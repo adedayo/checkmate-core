@@ -20,6 +20,7 @@ import (
 
 var (
 	defaultProjectFile     = "project.yaml"
+	defaultWorkspacesFile  = "workspaces.yaml"
 	projectSummaryFile     = "project-summary.yaml"
 	defaultScanFile        = "scanConfig.yaml"
 	defaultScanResultsFile = "scanResults.json"
@@ -27,6 +28,8 @@ var (
 )
 
 type ProjectManager interface {
+	GetWorkspaces() *Workspace
+	SaveWorkspaces(*Workspace)
 	ListProjectSummaries() []ProjectSummary
 	GetProjectSummary(projectID string) ProjectSummary
 	GetProject(id string) Project //if project does not exist, we get an "empty" struct. Check the ID=id in client
@@ -36,16 +39,19 @@ type ProjectManager interface {
 	// SummariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) error
 	RunScan(projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
 		scanIDCallback func(string), progressMonitor func(diagnostics.Progress),
-		summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary,
+		summariser ScanSummariser, wsSummariser WorkspaceSummariser,
 		consumers ...diagnostics.SecurityDiagnosticsConsumer)
 
 	CreateProject(projectDescription ProjectDescription) Project
-	UpdateProject(projectID string, projectDescription ProjectDescription) Project
+	UpdateProject(projectID string, projectDescription ProjectDescription, wsSummariser WorkspaceSummariser) Project
 	GetIssues(paginated PaginatedIssueSearch) PagedResult
 	RemediateIssue(exclude diagnostics.ExcludeRequirement) diagnostics.PolicyUpdateResult
 	GetProjectLocation(projID string) string
 	GetScanLocation(projID, scanID string) string
 }
+
+type WorkspaceSummariser func(pm ProjectManager, workspacesToUpdate []string) *Workspace
+type ScanSummariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary
 
 func MakeSimpleProjectManager() ProjectManager {
 	location := "."
@@ -56,6 +62,10 @@ func MakeSimpleProjectManager() ProjectManager {
 	pm := simpleProjectManager{
 		projectsLocation: location,
 	}
+
+	//attempt to create the project location if it doesn't exist
+	os.MkdirAll(location, 0755)
+
 	return pm
 }
 
@@ -87,9 +97,10 @@ func (spm simpleProjectManager) RemediateIssue(
 	updatePolicy := func() {
 		spm.UpdateProject(project.ID, ProjectDescription{
 			Name:         project.Name,
+			Workspace:    project.Workspace,
 			Repositories: project.Repositories,
 			ScanPolicy:   scanPolicy,
-		})
+		}, nil)
 		policy, err := yaml.Marshal(scanPolicy.Policy)
 		if err != nil {
 			result.Status = "fail = error marshalling new policy"
@@ -100,34 +111,7 @@ func (spm simpleProjectManager) RemediateIssue(
 	}
 
 	getFPString := func() (string, error) {
-		if issue.Source == nil {
-			result.Status = "fail - no source to exclude"
-			return "", fmt.Errorf(result.Status)
-		}
-		source := *issue.Source
-		start := issue.HighlightRange.Start
-		end := issue.HighlightRange.End
-		lines := strings.Split(source, "\n")
-
-		if start.Line == end.Line {
-			//same line
-			begin := issue.Range.Start.Line - start.Line
-			x := start.Character - issue.Range.Start.Character
-			y := end.Character - issue.Range.Start.Character
-			fmt.Printf("%d, %s, %d, %d \n", begin, lines[begin], start.Character, end.Character)
-
-			line := lines[begin][x:y]
-			fmt.Printf("%s\n", line)
-			return line, nil
-		} else {
-			begin := issue.Range.Start.Line - start.Line
-			stop := issue.Range.Start.Line - end.Line
-			ll := lines[begin : stop+1]
-			ll[0] = ll[0][start.Character:]
-			lastIndex := len(ll) - 1
-			ll[lastIndex] = ll[lastIndex][:end.Character+1]
-			return strings.Join(ll, "\n"), nil
-		}
+		return issue.GetValue(), nil
 	}
 
 	//attempt to make an exclusion regex that is portable across systems
@@ -152,7 +136,7 @@ func (spm simpleProjectManager) RemediateIssue(
 			scanPolicy.Policy.PerFileExcludedStrings = make(map[string][]string)
 		}
 		if x, present := scanPolicy.Policy.PerFileExcludedStrings[file]; present {
-			scanPolicy.Policy.PerFileExcludedStrings[file] = append(x, data)
+			scanPolicy.Policy.PerFileExcludedStrings[file] = appendUnique(x, data)
 		} else {
 			scanPolicy.Policy.PerFileExcludedStrings[file] = []string{data}
 		}
@@ -163,21 +147,75 @@ func (spm simpleProjectManager) RemediateIssue(
 			result.Status = err.Error()
 			return
 		}
-		scanPolicy.Policy.GloballyExcludedStrings = append(scanPolicy.Policy.GloballyExcludedStrings, data)
+		scanPolicy.Policy.GloballyExcludedStrings = appendUnique(scanPolicy.Policy.GloballyExcludedStrings, data)
 		updatePolicy()
 	case "ignore_file":
 		if issue.Location == nil {
 			result.Status = "fail - file to exclude not supplied"
 			return
 		}
-		loc := fmt.Sprintf(".*%s", getCanonicalPath(*issue.Location))
-		scanPolicy.Policy.PathExclusionRegExs = append(scanPolicy.Policy.PathExclusionRegExs, loc)
+		loc := fmt.Sprintf(".*%s", fixRegex(getCanonicalPath(*issue.Location)))
+		scanPolicy.Policy.PathExclusionRegExs = appendUnique(scanPolicy.Policy.PathExclusionRegExs, loc)
 		updatePolicy()
 	default:
 		result.Status = "fail"
 	}
-
 	return
+}
+
+func fixRegex(rx string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(rx, ".", "[.]"),
+		"$", "[$]"), "^", "[^]"), "!", "[!]")
+}
+
+func appendUnique(xs []string, x string) (out []string) {
+	m := make(map[string]struct{})
+	nothing := struct{}{}
+	m[x] = nothing
+	for _, y := range xs {
+		m[y] = nothing
+	}
+	for z := range m {
+		out = append(out, z)
+	}
+	return
+}
+
+func (spm simpleProjectManager) GetWorkspaces() *Workspace {
+	var ws Workspace
+	workspacesFile := path.Join(spm.projectsLocation, defaultWorkspacesFile)
+	data, err := os.ReadFile(workspacesFile)
+	if err == nil {
+		if yaml.Unmarshal(data, &ws) != nil {
+			return &Workspace{}
+		}
+	} else {
+		return &Workspace{}
+	}
+	return &ws
+}
+
+func (spm simpleProjectManager) SaveWorkspaces(ws *Workspace) {
+
+	projectLoc := spm.projectsLocation
+	if err := os.MkdirAll(projectLoc, 0755); err != nil {
+		return
+	}
+
+	data, err := yaml.Marshal(ws)
+	if err != nil {
+		return
+	}
+
+	wsFile, err := os.Create(path.Join(projectLoc, defaultWorkspacesFile))
+	if err != nil {
+		return
+	}
+
+	defer wsFile.Close()
+	if _, err = wsFile.Write(data); err != nil {
+		return
+	}
 
 }
 
@@ -210,6 +248,7 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 
 	includeTest := false
 	includeProd := false
+	confidentialFilesOnly := false
 	if len(paginated.Filter.Tags) > 0 {
 		for _, tag := range paginated.Filter.Tags {
 			if strings.ToLower(tag) == "test" {
@@ -217,6 +256,9 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 			}
 			if strings.ToLower(tag) == "prod" {
 				includeProd = true
+			}
+			if strings.ToLower(tag) == "confidential" {
+				confidentialFilesOnly = true
 			}
 		}
 	} else {
@@ -238,12 +280,18 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 				conf := strings.ToLower(issue.Justification.Headline.Confidence.GoString())
 				if _, present := confidenceValues[conf]; present {
 					if (includeTest && isTest) || (includeProd && !isTest) {
-						issues = append(issues, issue)
+						if !confidentialFilesOnly ||
+							(confidentialFilesOnly && issue.HasTag("confidential")) {
+							issues = append(issues, issue)
+						}
 					}
 				}
 			} else {
 				if (includeTest && isTest) || (includeProd && !isTest) {
-					issues = append(issues, issue)
+					if !confidentialFilesOnly ||
+						(confidentialFilesOnly && issue.HasTag("confidential")) {
+						issues = append(issues, issue)
+					}
 				}
 			}
 			location++
@@ -269,6 +317,7 @@ func (spm simpleProjectManager) CreateProject(projectDescription ProjectDescript
 	proj := Project{
 		ID:           projectID,
 		Name:         projectDescription.Name,
+		Workspace:    projectDescription.Workspace,
 		Repositories: projectDescription.Repositories,
 		ScanPolicy:   policy,
 	}
@@ -423,6 +472,20 @@ func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary Scan
 	return
 }
 
+type projectSummarySlice []ProjectSummary
+
+func (t projectSummarySlice) Len() int {
+	return len(t)
+}
+
+func (t projectSummarySlice) Less(i, j int) bool {
+	return t[i].LastScan.After(t[j].LastScan)
+}
+
+func (t projectSummarySlice) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
+}
+
 func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSummary) {
 
 	if files, err := ioutil.ReadDir(spm.projectsLocation); err == nil {
@@ -435,7 +498,10 @@ func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSumma
 			}
 		}
 	}
-	return
+	sorted := make(projectSummarySlice, 0)
+	sorted = append(sorted, summaries...)
+	sort.Sort(sorted)
+	return sorted
 }
 
 func (spm simpleProjectManager) RunScan(projectID string,
@@ -443,7 +509,8 @@ func (spm simpleProjectManager) RunScan(projectID string,
 	scanner SecurityScanner,
 	scanIDCallback func(string),
 	progressMonitor func(diagnostics.Progress),
-	summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary,
+	summariser ScanSummariser,
+	wsSummariser WorkspaceSummariser,
 	consumers ...diagnostics.SecurityDiagnosticsConsumer) {
 	scanID := spm.createScan(projectID, scanPolicy)
 	scanIDCallback(scanID)
@@ -456,14 +523,26 @@ func (spm simpleProjectManager) RunScan(projectID string,
 	if out, err := spm.summariseScanResults(projectID, scanID, summariser); err == nil {
 		project := spm.GetProject(projectID)
 		spm.saveProject(project, projectStatus{scanned: true, scanID: scanID, scanTime: out.Score.TimeStamp})
+		if wsSummariser != nil {
+			go spm.SaveWorkspaces(wsSummariser(spm, []string{project.Workspace}))
+		}
 	}
 }
 
-func (spm simpleProjectManager) UpdateProject(projectID string, projectDescription ProjectDescription) (project Project) {
+func (spm simpleProjectManager) UpdateProject(projectID string, projectDescription ProjectDescription,
+	wsSummariser WorkspaceSummariser) (project Project) {
 	proj := spm.GetProject(projectID)
 	if proj.ID == projectID {
 		//found project, update
 		proj.Name = projectDescription.Name
+		wspaces := []string{}
+		wsChange := false
+		if proj.Workspace != projectDescription.Workspace {
+			//project workspace changing
+			wsChange = true
+			wspaces = []string{proj.Workspace, projectDescription.Workspace}
+		}
+		proj.Workspace = projectDescription.Workspace
 		proj.Repositories = projectDescription.Repositories
 		policy := ScanPolicy{
 			ID:           util.NewRandomUUID().String(),
@@ -472,6 +551,9 @@ func (spm simpleProjectManager) UpdateProject(projectID string, projectDescripti
 			PolicyString: projectDescription.ScanPolicy.PolicyString,
 		}
 		proj.ScanPolicy = policy
+		if wsChange && wsSummariser != nil {
+			go spm.SaveWorkspaces(wsSummariser(spm, wspaces))
+		}
 		return spm.saveProject(proj, projectStatus{modified: true, modifiedTime: time.Now()})
 	}
 	//project not found, create one with a new ID
@@ -523,6 +605,7 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 		summary := ProjectSummary{
 			ID:           project.ID,
 			Name:         project.Name,
+			Workspace:    project.Workspace,
 			CreationDate: status.creationTime,
 			Repositories: project.Repositories,
 		}
@@ -550,6 +633,7 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 			if status.modified {
 				summary.LastModification = status.modifiedTime
 				summary.Repositories = project.Repositories
+				summary.Workspace = project.Workspace
 			}
 
 			if status.newScan {
