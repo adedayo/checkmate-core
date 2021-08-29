@@ -25,6 +25,12 @@ var (
 	defaultScanFile        = "scanConfig.yaml"
 	defaultScanResultsFile = "scanResults.json"
 	defaultScanSummaryFile = "scan-summary.yaml"
+	rxFix                  = map[string]string{
+		`.`: `[.]`,
+		`$`: `[$]`,
+		`^`: `[^]`,
+		`\`: `[\]`,
+	}
 )
 
 type ProjectManager interface {
@@ -154,7 +160,7 @@ func (spm simpleProjectManager) RemediateIssue(
 			result.Status = "fail - file to exclude not supplied"
 			return
 		}
-		loc := fmt.Sprintf(".*%s", fixRegex(getCanonicalPath(*issue.Location)))
+		loc := fmt.Sprintf(".*%s", fixPathRegex(getCanonicalPath(*issue.Location)))
 		scanPolicy.Policy.PathExclusionRegExs = appendUnique(scanPolicy.Policy.PathExclusionRegExs, loc)
 		updatePolicy()
 	default:
@@ -163,9 +169,13 @@ func (spm simpleProjectManager) RemediateIssue(
 	return
 }
 
-func fixRegex(rx string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(rx, ".", "[.]"),
-		"$", "[$]"), "^", "[^]"), "!", "[!]")
+func fixPathRegex(rx string) string {
+	for k, v := range rxFix {
+		rx = strings.ReplaceAll(rx, k, v)
+	}
+	return rx
+	// return strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(rx, ".", "[.]"),
+	// 	"$", "[$]"), "^", "[^]"), "!", "[!]")
 }
 
 func appendUnique(xs []string, x string) (out []string) {
@@ -464,10 +474,11 @@ func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary Scan
 		scanID := project.ScanIDs[len(project.ScanIDs)-1]
 		if file, err := os.Open(path.Join(spm.projectsLocation, projID, scanID, defaultScanSummaryFile)); err == nil {
 			yaml.NewDecoder(file).Decode(&summary)
-		} else {
-			//sometimes the scan has not been run/completed. This is not unusual
-			// log.Printf("Error loading scan summary: %s", err.Error())
 		}
+		// else {
+		//sometimes the scan has not been run/completed. This is not unusual
+		// log.Printf("Error loading scan summary: %s", err.Error())
+		// }
 	}
 	return
 }

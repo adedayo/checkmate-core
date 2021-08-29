@@ -1,7 +1,9 @@
 package diagnostics
 
 import (
+	"log"
 	"regexp"
+	"strings"
 )
 
 //ExclusionProvider implements a exclude strategy
@@ -28,6 +30,10 @@ type ExcludeDefinition struct {
 	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex"`
 }
 
+type ExcludeContainer struct {
+	ExcludeDef   *ExcludeDefinition
+	Repositories []string
+}
 type ExcludeRequirement struct {
 	What      string
 	Issue     SecurityDiagnostic
@@ -94,18 +100,17 @@ type defaultExclusionProvider struct {
 	globallyExcludedRegExsCompiled  []*regexp.Regexp
 	pathExclusionRegExsCompiled     []*regexp.Regexp
 	pathRegexExcludedRegExsCompiled map[*regexp.Regexp][]*regexp.Regexp
+	repositories                    []string
 }
 
 //CompileExcludes returns a ExclusionProvider with the regular expressions already compiled
-func CompileExcludes(exclude *ExcludeDefinition) (ExclusionProvider, error) {
+func CompileExcludes(container ExcludeContainer) (ExclusionProvider, error) {
 	wl := defaultExclusionProvider{
-		ExcludeDefinition: exclude,
+		ExcludeDefinition: container.ExcludeDef,
+		repositories:      container.Repositories,
 	}
 	err := wl.compileRegExs()
-	if err != nil {
-		return nil, err
-	}
-	return &wl, nil
+	return &wl, err
 }
 
 //MakeEmptyExcludes creates an empty default exclusion list
@@ -127,11 +132,13 @@ func MakeEmptyExcludes() ExclusionProvider {
 //compileRegExs ensures the regular expressions defined are compiled before use
 func (wl *defaultExclusionProvider) compileRegExs() error {
 	wl.globallyExcludedRegExsCompiled = make([]*regexp.Regexp, 0)
+	var bestEffortError error
 	for _, s := range wl.GloballyExcludedRegExs {
 		if re, err := regexp.Compile(s); err == nil {
 			wl.globallyExcludedRegExsCompiled = append(wl.globallyExcludedRegExsCompiled, re)
 		} else {
-			return err
+			log.Printf("Error: Compiling Regex %s, %s", s, err.Error())
+			bestEffortError = err
 		}
 	}
 
@@ -140,7 +147,8 @@ func (wl *defaultExclusionProvider) compileRegExs() error {
 		if re, err := regexp.Compile(s); err == nil {
 			wl.pathExclusionRegExsCompiled = append(wl.pathExclusionRegExsCompiled, re)
 		} else {
-			return err
+			log.Printf("Error: Compiling Regex %s, %s", s, err.Error())
+			bestEffortError = err
 		}
 	}
 
@@ -148,29 +156,37 @@ func (wl *defaultExclusionProvider) compileRegExs() error {
 	for p, ss := range wl.PathRegexExcludedRegExs {
 		pre, err := regexp.Compile(p)
 		if err != nil {
-			return err
+			log.Printf("Error: Compiling Regex %s, %s", p, err.Error())
+			bestEffortError = err
+			continue
 		}
 		srs := make([]*regexp.Regexp, 0)
 		for _, s := range ss {
 			sre, err := regexp.Compile(s)
 			if err != nil {
-				return err
+				log.Printf("Error: Compiling Regex %s, %s", s, err.Error())
+				bestEffortError = err
+				continue
 			}
 			srs = append(srs, sre)
 		}
 		wl.pathRegexExcludedRegExsCompiled[pre] = srs
 	}
-	return nil
+	return bestEffortError
 }
 
 //ShouldExclude determines whether the supplied value should be excluded based on its value and the
 //path (if any) of the source file providing additional context
 func (wl *defaultExclusionProvider) ShouldExclude(pathContext, value string) bool {
-	// fmt.Printf("Should exclude Path:%s, Value:%s\n", pathContext, value)
 	for _, s := range wl.GloballyExcludedStrings {
 		if s == value {
 			return true
 		}
+	}
+
+	//allow policies to be portable by stripping off project repository base paths
+	for _, prefix := range wl.repositories {
+		pathContext = strings.TrimPrefix(pathContext, prefix)
 	}
 
 	for p, mvs := range wl.PerFileExcludedStrings {
