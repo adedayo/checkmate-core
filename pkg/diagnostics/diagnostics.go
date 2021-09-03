@@ -32,6 +32,48 @@ type SecurityDiagnostic struct {
 	Tags       *[]string `json:"tags,omitempty"` //optionally annotate diagnostic with tags, e.g. "test"
 }
 
+func (sd *SecurityDiagnostic) CSVHeaders() []string {
+	return []string{
+		`Code`, //Source
+		`File`, //Location
+		`Description`,
+		`Severity`,
+		`File Location`, //Range Start Position
+		`SHA256`,
+		`Tags`,
+		`Detector ID`, // ProviderID
+	}
+}
+
+func nilAsEmpty(x *string) string {
+	if x == nil {
+		return ""
+	}
+	return *x
+}
+
+func nilArrayAsEmpty(x *[]string) string {
+	if x == nil {
+		return ""
+	}
+	return strings.Join(*x, " ")
+}
+
+func (sd *SecurityDiagnostic) CSVValues() []string {
+	rng := adjustRange(sd.Range)
+	loc := fmt.Sprintf(`Line: %d Column: %d`, rng.Start.Line, rng.Start.Character)
+	return []string{
+		nilAsEmpty(sd.Source),
+		nilAsEmpty(sd.Location),
+		sd.Justification.Headline.Description,
+		sd.Justification.Headline.Confidence.String(),
+		loc,
+		nilAsEmpty(sd.SHA256),
+		nilArrayAsEmpty(sd.Tags),
+		nilAsEmpty(sd.ProviderID),
+	}
+}
+
 //HasTag cheks whether diagnostic has the specified tag
 func (sd *SecurityDiagnostic) HasTag(tag string) bool {
 	if sd.Tags == nil {
