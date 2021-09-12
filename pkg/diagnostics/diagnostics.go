@@ -87,27 +87,7 @@ func (sd *SecurityDiagnostic) HasTag(tag string) bool {
 	return false
 }
 
-//TODO this does not currently work well as expected
 func (sd *SecurityDiagnostic) GetValue() string {
-
-	// if sd.Location != nil {
-	// 	log.Printf("Location:%s\n", *sd.Location)
-	// 	if file, err := os.Open(*sd.Location); err == nil {
-	// 		defer file.Close()
-	// 		file.Seek(sd.RawRange.StartIndex, io.SeekStart)
-	// 		buf := make([]byte, sd.RawRange.EndIndex-sd.RawRange.StartIndex)
-	// 		if _, err = file.ReadAt(buf, sd.RawRange.StartIndex); err == nil {
-	// 			val := string(buf)
-	// 			fmt.Printf("Value:%s\n", val)
-	// 			return val
-	// 		} else {
-	// 			log.Printf("%v\n", err)
-	// 		}
-	// 	} else {
-	// 		log.Printf("%v\n", err)
-	// 	}
-	// }
-	// return ""
 
 	if sd.Source == nil {
 		return ""
@@ -115,52 +95,6 @@ func (sd *SecurityDiagnostic) GetValue() string {
 
 	return *sd.Source
 
-	// if sd.Source == nil || *sd.Source == "" {
-	// 	return ""
-	// }
-
-	// lines := strings.Split(*sd.Source, "\n")
-
-	// r := sd.Range
-	// hr := sd.HighlightRange
-
-	// begin := int(hr.Start.Character)
-
-	// if hr.Start.Line == r.Start.Line {
-	// 	begin -= int(r.Start.Character)
-	// } else {
-	// 	lineDiff := hr.Start.Line - r.Start.Line
-	// 	for i, l := range lines {
-	// 		if i < int(lineDiff) {
-	// 			begin += len(l) + 1 //+1 is the newline character
-	// 		}
-	// 	}
-	// }
-
-	// end := int(hr.End.Character) //end index not inclusive
-
-	// if hr.End.Line == r.Start.Line {
-	// 	end -= int(r.Start.Character)
-	// } else {
-	// 	lineDiff := hr.End.Line - r.Start.Line
-	// 	for i, l := range lines {
-	// 		if i < int(lineDiff) {
-	// 			end += len(l) + 1 //+1 is the newline character
-	// 		}
-	// 	}
-	// }
-
-	// if begin > end || begin >= len(*sd.Source) {
-	// 	//calculation is wrong somewhere, return everything
-	// 	return *sd.Source
-	// }
-
-	// if end >= len(*sd.Source) {
-	// 	//the index is broken. return till the end
-	// 	return (*sd.Source)[begin:]
-	// }
-
-	// return (*sd.Source)[begin:end]
 }
 
 //AddTag adds a tag to the diagnostic
@@ -192,6 +126,13 @@ func adjustRange(in code.Range) (out code.Range) {
 //CharRange describes the location in the file where a range of "text" is found
 type CharRange struct {
 	StartIndex, EndIndex int64
+}
+
+func (thisRange *CharRange) Contains(thatRange *CharRange) bool {
+	if thisRange.StartIndex <= thatRange.StartIndex && thatRange.EndIndex <= thisRange.EndIndex {
+		return true
+	}
+	return false
 }
 
 //Confidence reflects the degree of confidence that we have in an assessment

@@ -1,9 +1,13 @@
 package diagnostics
 
 import (
+	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 //ExclusionProvider implements a exclude strategy
@@ -11,8 +15,10 @@ type ExclusionProvider interface {
 	//ShouldExclude determines whether the supplied value should be excluded based on its value and the
 	//path (if any) of the source file providing additional context
 	ShouldExclude(pathContext, value string) bool
+	ShouldExcludeHashOnPath(pathContext, hash string) bool
 	ShouldExcludePath(path string) bool
 	ShouldExcludeValue(value string) bool
+	ShouldExcludeHash(hash string) bool
 }
 
 // ExcludeDefinition describes exclude rules
@@ -21,10 +27,14 @@ type ExcludeDefinition struct {
 	GloballyExcludedRegExs []string `yaml:"GloballyExcludedRegExs"`
 	//These specify strings that should be ignored as secrets anywhere they are found
 	GloballyExcludedStrings []string `yaml:"GloballyExcludedStrings"`
+	//These specify SHA256 hashes that should be ignored as secrets anywhere they are found
+	GloballyExcludedHashes []string `yaml:"GloballyExcludedHashes"`
 	//These specify regular expressions that ignore files whose paths match
 	PathExclusionRegExs []string `yaml:"PathExclusionRegExs"`
 	//These specify sets of strings that should be excluded in a given file. That is filepath -> Set(strings)
 	PerFileExcludedStrings map[string][]string `yaml:"PerFileExcludedStrings"`
+	//These specify sets of SHA256 hashes that should be excluded in a given file. That is filepath -> Set(strings)
+	PerFileExcludedHashes map[string][]string `yaml:"PerFileExcludedHashes"`
 	//These specify sets of regular expressions that if matched on a path matched by the filepath key should be ignored. That is filepath_regex -> Set(regex)
 	//This is a quite versatile construct and can model the four above
 	PathRegexExcludedRegExs map[string][]string `yaml:"PathRegexExcludedRegex"`
@@ -109,6 +119,7 @@ func CompileExcludes(container ExcludeContainer) (ExclusionProvider, error) {
 		ExcludeDefinition: container.ExcludeDef,
 		repositories:      container.Repositories,
 	}
+	wl.cleanSerialisationConstructs()
 	err := wl.compileRegExs()
 	return &wl, err
 }
@@ -122,6 +133,8 @@ func MakeEmptyExcludes() ExclusionProvider {
 			PathExclusionRegExs:     []string{},
 			PathRegexExcludedRegExs: make(map[string][]string),
 			PerFileExcludedStrings:  make(map[string][]string),
+			GloballyExcludedHashes:  []string{},
+			PerFileExcludedHashes:   make(map[string][]string),
 		},
 		globallyExcludedRegExsCompiled:  []*regexp.Regexp{},
 		pathExclusionRegExsCompiled:     []*regexp.Regexp{},
@@ -129,16 +142,45 @@ func MakeEmptyExcludes() ExclusionProvider {
 	}
 }
 
+func (wl *defaultExclusionProvider) cleanSerialisationConstructs() (err error) {
+	for i, x := range wl.GloballyExcludedStrings {
+		var data string
+		if e := yaml.Unmarshal([]byte(x), &data); e == nil {
+			wl.GloballyExcludedStrings[i] = string(data)
+		} else {
+			err = e
+		}
+	}
+
+	wl.GloballyExcludedStrings = sort.StringSlice(wl.GloballyExcludedStrings)
+
+	for k, v := range wl.PerFileExcludedStrings {
+
+		after := []string{}
+		for _, x := range v {
+			var data string
+			if e := yaml.Unmarshal([]byte(x), &data); e == nil {
+				after = append(after, string(data))
+			} else {
+				after = append(after, x) //append erroneous unmarshalled data?
+			}
+		}
+		after = sort.StringSlice(after)
+		wl.PerFileExcludedStrings[k] = after
+	}
+	return
+}
+
 //compileRegExs ensures the regular expressions defined are compiled before use
 func (wl *defaultExclusionProvider) compileRegExs() error {
 	wl.globallyExcludedRegExsCompiled = make([]*regexp.Regexp, 0)
-	var bestEffortError error
+	bestEffortErrors := []error{}
 	for _, s := range wl.GloballyExcludedRegExs {
 		if re, err := regexp.Compile(s); err == nil {
 			wl.globallyExcludedRegExsCompiled = append(wl.globallyExcludedRegExsCompiled, re)
 		} else {
-			log.Printf("Error: Compiling Regex %s, %s", s, err.Error())
-			bestEffortError = err
+			log.Printf("Problem compiling regex: %s, Error: %s", s, err.Error())
+			bestEffortErrors = append(bestEffortErrors, err)
 		}
 	}
 
@@ -147,8 +189,8 @@ func (wl *defaultExclusionProvider) compileRegExs() error {
 		if re, err := regexp.Compile(s); err == nil {
 			wl.pathExclusionRegExsCompiled = append(wl.pathExclusionRegExsCompiled, re)
 		} else {
-			log.Printf("Error: Compiling Regex %s, %s", s, err.Error())
-			bestEffortError = err
+			log.Printf("Problem compiling regex: %s, Error: %s", s, err.Error())
+			bestEffortErrors = append(bestEffortErrors, err)
 		}
 	}
 
@@ -157,22 +199,33 @@ func (wl *defaultExclusionProvider) compileRegExs() error {
 		pre, err := regexp.Compile(p)
 		if err != nil {
 			log.Printf("Error: Compiling Regex %s, %s", p, err.Error())
-			bestEffortError = err
+			bestEffortErrors = append(bestEffortErrors, err)
 			continue
 		}
 		srs := make([]*regexp.Regexp, 0)
 		for _, s := range ss {
 			sre, err := regexp.Compile(s)
 			if err != nil {
-				log.Printf("Error: Compiling Regex %s, %s", s, err.Error())
-				bestEffortError = err
+				log.Printf("Problem compiling regex: %s, Error: %s", s, err.Error())
+				bestEffortErrors = append(bestEffortErrors, err)
 				continue
 			}
 			srs = append(srs, sre)
 		}
 		wl.pathRegexExcludedRegExsCompiled[pre] = srs
 	}
-	return bestEffortError
+
+	var combinedErr error
+
+	if len(bestEffortErrors) > 0 {
+		errMessages := []string{}
+		for _, err := range bestEffortErrors {
+			errMessages = append(errMessages, err.Error())
+		}
+		combinedErr = fmt.Errorf("%s", strings.Join(errMessages, "\n"))
+	}
+
+	return combinedErr
 }
 
 //ShouldExclude determines whether the supplied value should be excluded based on its value and the
@@ -218,6 +271,41 @@ func (wl *defaultExclusionProvider) ShouldExclude(pathContext, value string) boo
 					return true
 				}
 			}
+		}
+	}
+	return false
+}
+
+func (wl *defaultExclusionProvider) ShouldExcludeHashOnPath(pathContext, hash string) bool {
+
+	for _, s := range wl.GloballyExcludedHashes {
+		if s == hash {
+			return true
+		}
+	}
+
+	//allow policies to be portable by stripping off project repository base paths
+	for _, prefix := range wl.repositories {
+		pathContext = strings.TrimPrefix(pathContext, prefix)
+	}
+
+	for p, mvs := range wl.PerFileExcludedHashes {
+		if p == pathContext {
+			for _, mv := range mvs {
+				if hash == mv {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func (wl *defaultExclusionProvider) ShouldExcludeHash(hash string) bool {
+	for _, s := range wl.GloballyExcludedHashes {
+		if s == hash {
+			return true
 		}
 	}
 	return false

@@ -101,17 +101,19 @@ func (spm simpleProjectManager) RemediateIssue(
 	scanPolicy := project.ScanPolicy
 
 	updatePolicy := func() {
+
+		policy, err := yaml.Marshal(scanPolicy.Policy)
+		if err != nil {
+			result.Status = fmt.Sprintf("fail = error marshalling new policy: %s", err.Error())
+			return
+		}
+		//check policy is well-formed before updating project
 		spm.UpdateProject(project.ID, ProjectDescription{
 			Name:         project.Name,
 			Workspace:    project.Workspace,
 			Repositories: project.Repositories,
 			ScanPolicy:   scanPolicy,
 		}, nil)
-		policy, err := yaml.Marshal(scanPolicy.Policy)
-		if err != nil {
-			result.Status = "fail = error marshalling new policy"
-			return
-		}
 		result.Status = "success"
 		result.NewPolicy = string(policy)
 	}
@@ -137,6 +139,11 @@ func (spm simpleProjectManager) RemediateIssue(
 			result.Status = err.Error()
 			return
 		}
+		data, err = encode(data)
+		if err != nil {
+			result.Status = err.Error()
+			return
+		}
 		file := getCanonicalPath(*issue.Location)
 		if scanPolicy.Policy.PerFileExcludedStrings == nil {
 			scanPolicy.Policy.PerFileExcludedStrings = make(map[string][]string)
@@ -147,13 +154,43 @@ func (spm simpleProjectManager) RemediateIssue(
 			scanPolicy.Policy.PerFileExcludedStrings[file] = []string{data}
 		}
 		updatePolicy()
+	case "ignore_sha2_here":
+		data := issue.SHA256
+		if data == nil {
+			result.Status = "Cannot exclude SHA256 when it is not computed in the first instance"
+			return
+		}
+		file := getCanonicalPath(*issue.Location)
+		if scanPolicy.Policy.PerFileExcludedHashes == nil {
+			scanPolicy.Policy.PerFileExcludedHashes = make(map[string][]string)
+		}
+
+		if x, present := scanPolicy.Policy.PerFileExcludedHashes[file]; present {
+			scanPolicy.Policy.PerFileExcludedHashes[file] = appendUnique(x, *data)
+		} else {
+			scanPolicy.Policy.PerFileExcludedHashes[file] = []string{*data}
+		}
+		updatePolicy()
 	case "ignore_everywhere":
 		data, err := getFPString()
 		if err != nil {
 			result.Status = err.Error()
 			return
 		}
+		data, err = encode(data)
+		if err != nil {
+			result.Status = err.Error()
+			return
+		}
 		scanPolicy.Policy.GloballyExcludedStrings = appendUnique(scanPolicy.Policy.GloballyExcludedStrings, data)
+		updatePolicy()
+	case "ignore_sha2_everywhere":
+		data := issue.SHA256
+		if data == nil {
+			result.Status = "Cannot exclude SHA256 when it is not computed in the first instance"
+			return
+		}
+		scanPolicy.Policy.GloballyExcludedHashes = appendUnique(scanPolicy.Policy.GloballyExcludedHashes, *data)
 		updatePolicy()
 	case "ignore_file":
 		if issue.Location == nil {
@@ -165,6 +202,29 @@ func (spm simpleProjectManager) RemediateIssue(
 		updatePolicy()
 	default:
 		result.Status = "fail"
+	}
+	return
+}
+
+func encode(data string) (out string, err error) {
+	var dec string
+	out = data
+	mustEncode := false
+	if err = yaml.Unmarshal([]byte(data), &dec); err == nil {
+		if dec != data {
+			mustEncode = true
+		}
+	} else {
+		mustEncode = true
+	}
+
+	if mustEncode {
+		b, e := yaml.Marshal(data)
+		if e != nil {
+			err = e
+			return
+		}
+		out = string(b)
 	}
 	return
 }
@@ -188,6 +248,7 @@ func appendUnique(xs []string, x string) (out []string) {
 	for z := range m {
 		out = append(out, z)
 	}
+	out = sort.StringSlice(out)
 	return
 }
 
@@ -259,6 +320,7 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 	includeTest := false
 	includeProd := false
 	confidentialFilesOnly := false
+	showUnique := false
 	if len(paginated.Filter.Tags) > 0 {
 		for _, tag := range paginated.Filter.Tags {
 			if strings.ToLower(tag) == "test" {
@@ -270,6 +332,9 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 			if strings.ToLower(tag) == "confidential" {
 				confidentialFilesOnly = true
 			}
+			if strings.ToLower(tag) == "unique" {
+				showUnique = true
+			}
 		}
 	} else {
 		includeTest = true
@@ -279,6 +344,35 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) PagedR
 	location := paginated.Page * paginated.PageSize
 	length := len(results)
 	issues := make([]*diagnostics.SecurityDiagnostic, 0)
+
+	//Collect a sample of each unique secret
+	if showUnique {
+		sameSha := make(map[string][]*diagnostics.SecurityDiagnostic)
+
+		for _, issue := range results {
+			if issue.SHA256 != nil {
+				sha := *issue.SHA256
+				if shas, present := sameSha[sha]; present {
+					sameSha[sha] = append(shas, issue)
+				} else {
+					sameSha[sha] = []*diagnostics.SecurityDiagnostic{issue}
+				}
+			}
+		}
+
+		out := []*diagnostics.SecurityDiagnostic{}
+		for _, v := range sameSha {
+			out = append(out, v[0]) //take only one sample
+		}
+
+		return PagedResult{
+			Total:       len(results),
+			Page:        paginated.Page,
+			Diagnostics: out,
+		}
+
+	}
+
 	//we could have simply calculated the required range and taken the slice out of results
 	//however in anticipation of filters e.g. only get "High" confidence results, the iteration
 	//approach seems reasonable
@@ -402,7 +496,8 @@ func (spm simpleProjectManager) GetScanConfig(projID, scanID string) (config Sca
 func (spm simpleProjectManager) loadProject(projID string) (proj Project) {
 	data, err := os.ReadFile(path.Join(spm.projectsLocation, projID, defaultProjectFile))
 	if err == nil {
-		if yaml.Unmarshal(data, &proj) != nil {
+		if err = yaml.Unmarshal(data, &proj); err != nil {
+			log.Printf("%v", err)
 			return Project{}
 		}
 	}

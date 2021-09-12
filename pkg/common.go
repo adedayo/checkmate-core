@@ -3,6 +3,7 @@ package common
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
 	"github.com/adedayo/checkmate-core/pkg/util"
@@ -169,20 +170,43 @@ type DiagnosticsAggregator interface {
 
 type simpleDiagnosticAggregator struct {
 	// input       chan diagnostics.SecurityDiagnostic
-	diagnostics []*diagnostics.SecurityDiagnostic
+	// diagnostics            []*diagnostics.SecurityDiagnostic
+	mutex                  sync.RWMutex
+	fileIndexedDiagnostics map[string][]*diagnostics.SecurityDiagnostic
 }
 
 func (sda *simpleDiagnosticAggregator) AddDiagnostic(diagnostic *diagnostics.SecurityDiagnostic) {
-	sda.diagnostics = append(sda.diagnostics, diagnostic)
+	// sda.diagnostics = append(sda.diagnostics, diagnostic)
+	file := ""
+	if diagnostic.Location != nil {
+		file = *diagnostic.Location
+	}
+	sda.mutex.Lock()
+	if diags, present := sda.fileIndexedDiagnostics[file]; present {
+		sda.fileIndexedDiagnostics[file] = append(diags, diagnostic)
+	} else {
+		sda.fileIndexedDiagnostics[file] = []*diagnostics.SecurityDiagnostic{diagnostic}
+	}
+	sda.mutex.Unlock()
 }
 
 func (sda *simpleDiagnosticAggregator) Aggregate() (agg []*diagnostics.SecurityDiagnostic) {
-	excluded := make(map[int]bool)
-	diagnostics := sda.diagnostics
+	for _, issues := range sda.fileIndexedDiagnostics {
+		agg = append(agg, removeOverlappingIssues(issues)...)
+	}
+	return
+}
+
+func removeOverlappingIssues(issues []*diagnostics.SecurityDiagnostic) []*diagnostics.SecurityDiagnostic {
+	excluded := make([]bool, len(issues))
+	out := make([]*diagnostics.SecurityDiagnostic, 0)
+	diagnostics := issues
 	for i, di := range diagnostics {
 		for j, dj := range diagnostics {
 			if j != i {
-				if dj.Range.Contains(di.Range) && di.Justification.Headline.Confidence <= dj.Justification.Headline.Confidence && !di.Range.Contains(dj.Range) {
+				if dj.RawRange.Contains(&di.RawRange) &&
+					di.Justification.Headline.Confidence <= dj.Justification.Headline.Confidence &&
+					!di.RawRange.Contains(&dj.RawRange) {
 					excluded[i] = true
 					break
 				}
@@ -192,14 +216,19 @@ func (sda *simpleDiagnosticAggregator) Aggregate() (agg []*diagnostics.SecurityD
 
 	for i, di := range diagnostics {
 		if !excluded[i] {
-			agg = append(agg, di)
+			out = append(out, di)
 		}
 	}
-	return
+
+	return out
 }
 
 //MakeSimpleAggregator creates a diagnostics aggregator that removes diagnostics whose range is completely
 //overlapped by another diagnostic's range
 func MakeSimpleAggregator() DiagnosticsAggregator {
-	return &simpleDiagnosticAggregator{}
+	return &simpleDiagnosticAggregator{
+		// diagnostics:            make([]*diagnostics.SecurityDiagnostic, 0),
+		mutex:                  sync.RWMutex{},
+		fileIndexedDiagnostics: make(map[string][]*diagnostics.SecurityDiagnostic),
+	}
 }
