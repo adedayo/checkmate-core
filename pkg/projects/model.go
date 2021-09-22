@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
@@ -138,6 +139,57 @@ type ProjectSummary struct {
 	CreationDate     time.Time    `yaml:"CreationDate"`
 	LastModification time.Time    `yaml:"LastModification"`
 	LastScan         time.Time    `yaml:"LastScan"`
+}
+
+func (ps ProjectSummary) CSVHeaders() []string {
+	return []string{
+		`Project Name`,
+		`Grade (A-F)`,
+		`Metric (Score out of 100)`,
+		`Critical Issues Count`,
+		`High Issues Count`,
+		`Medium Issues Count`,
+		`Low Issues Count`,
+		`Informational Issues Count`,
+		`Workspace`,
+		`Repositories`,
+		`ID`,
+	}
+}
+
+func (ps *ProjectSummary) CSVValues() []string {
+	reps := []string{}
+	for _, r := range ps.Repositories {
+		reps = append(reps, r.Location)
+	}
+	return []string{
+		ps.Name,
+		ps.LastScanSummary.Score.Grade,
+		roundDown(ps.LastScanSummary.Score.Metric),
+		getSeverity(ps, `criticalCount`),
+		getSeverity(ps, `highCount`),
+		getSeverity(ps, `mediumCount`),
+		getSeverity(ps, `lowCount`),
+		getSeverity(ps, `informationalCount`),
+		ps.Workspace,
+		strings.Join(reps, "; "),
+		ps.ID,
+	}
+
+}
+
+func getSeverity(ps *ProjectSummary, criticality string) string {
+	if info, ok := ps.LastScanSummary.AdditionalInfo.(map[string]interface{}); ok {
+		if val, ok2 := info[criticality].(int); ok2 {
+			return fmt.Sprintf("%d", val)
+		}
+	}
+	return ""
+
+}
+
+func roundDown(num float32) string {
+	return fmt.Sprintf("%d", int64(num))
 }
 
 func (ps *ProjectSummary) MarshalJSON() ([]byte, error) {
