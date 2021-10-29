@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	common "github.com/adedayo/checkmate-core/pkg"
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
 	"github.com/adedayo/checkmate-core/pkg/util"
 	"github.com/mitchellh/go-homedir"
@@ -52,6 +53,7 @@ type ProjectManager interface {
 	UpdateProject(projectID string, projectDescription ProjectDescription, wsSummariser WorkspaceSummariser) Project
 	GetIssues(paginated PaginatedIssueSearch) PagedResult
 	RemediateIssue(exclude diagnostics.ExcludeRequirement) diagnostics.PolicyUpdateResult
+	GetCodeContext(cnt common.CodeContext) string
 	GetProjectLocation(projID string) string
 	GetScanLocation(projID, scanID string) string
 }
@@ -85,6 +87,22 @@ func (spm simpleProjectManager) GetProjectLocation(projID string) string {
 
 func (spm simpleProjectManager) GetScanLocation(projID, scanID string) string {
 	return path.Join(spm.projectsLocation, projID, scanID)
+}
+
+func (spm simpleProjectManager) GetCodeContext(cnt common.CodeContext) (out string) {
+	if !strings.Contains(cnt.Location, "git@") {
+		//Filesystem location
+		file, err := os.Open(cnt.Location)
+		if err != nil {
+			return
+		}
+		if x, err := io.ReadAll(file); err == nil {
+			out = string(x)
+			return out
+		}
+	}
+
+	return
 }
 
 func (spm simpleProjectManager) RemediateIssue(

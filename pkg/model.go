@@ -28,5 +28,9 @@ type ScanRequest struct {
 	Type       ScanType
 	Paths      []string     // for PathScan type
 	DataToScan []DataToScan // for StringScan type
-	Excludes  diagnostics.ExcludeDefinition
+	Excludes   diagnostics.ExcludeDefinition
+}
+
+type CodeContext struct {
+	Location, ProjectID, ScanID string
 }
