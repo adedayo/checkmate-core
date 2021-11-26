@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	common "github.com/adedayo/checkmate-core/pkg"
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
+	gitutils "github.com/adedayo/checkmate-core/pkg/git"
 	"github.com/adedayo/checkmate-core/pkg/util"
 	"github.com/mitchellh/go-homedir"
 	"gopkg.in/yaml.v3"
@@ -44,7 +46,7 @@ type ProjectManager interface {
 	GetScanResults(projectID, scanID string) []*diagnostics.SecurityDiagnostic
 	GetScanResultSummary(projectID, scanID string) (ScanSummary, error)
 	// SummariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) error
-	RunScan(projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
+	RunScan(ctx context.Context, projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
 		scanIDCallback func(string), progressMonitor func(diagnostics.Progress),
 		summariser ScanSummariser, wsSummariser WorkspaceSummariser,
 		consumers ...diagnostics.SecurityDiagnosticsConsumer)
@@ -90,7 +92,7 @@ func (spm simpleProjectManager) GetScanLocation(projID, scanID string) string {
 }
 
 func (spm simpleProjectManager) GetCodeContext(cnt common.CodeContext) (out string) {
-	if !strings.Contains(cnt.Location, "git@") {
+	if !strings.Contains(cnt.Location, ".git") {
 		//Filesystem location
 		file, err := os.Open(cnt.Location)
 		if err != nil {
@@ -100,6 +102,21 @@ func (spm simpleProjectManager) GetCodeContext(cnt common.CodeContext) (out stri
 			out = string(x)
 			return out
 		}
+	} else {
+		//likely a git checkout, try and open it if the codebase is still there
+		z := strings.Split(cnt.Location, ".git/")
+		if len(z) == 2 {
+			location := path.Join(gitutils.DEFAULT_CLONE_BASE_DIR, path.Base(z[0]), z[1])
+			file, err := os.Open(location)
+			if err != nil {
+				return
+			}
+			if x, err := io.ReadAll(file); err == nil {
+				out = string(x)
+				return out
+			}
+		}
+
 	}
 
 	return
@@ -628,7 +645,7 @@ func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSumma
 	return sorted
 }
 
-func (spm simpleProjectManager) RunScan(projectID string,
+func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	scanPolicy ScanPolicy,
 	scanner SecurityScanner,
 	scanIDCallback func(string),
@@ -641,7 +658,7 @@ func (spm simpleProjectManager) RunScan(projectID string,
 	sdc := createDiagnosticConsumer(spm.projectsLocation, projectID, scanID)
 	consumers = append(consumers, sdc)
 	scanStartTime := time.Now()
-	scanner.Scan(projectID, scanID, spm, progressMonitor, consumers...)
+	scanner.Scan(ctx, projectID, scanID, spm, progressMonitor, consumers...)
 	scanEndTime := time.Now()
 	sdc.close(scanStartTime, scanEndTime)
 	if out, err := spm.summariseScanResults(projectID, scanID, summariser); err == nil {

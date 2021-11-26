@@ -22,12 +22,13 @@ type WorkspaceDetail struct {
 }
 
 type Project struct {
-	ID           string       `yaml:"ID"`        //unique
-	Name         string       `yaml:"Name"`      //human-friendly
-	Workspace    string       `yaml:"Workspace"` //Used to group related projects
-	Repositories []Repository `yaml:"Repositories,omitempty"`
-	ScanIDs      []string     `yaml:"ScanIDs"`
-	ScanPolicy   ScanPolicy   `yaml:"ScanPolicy"`
+	ID                   string       `yaml:"ID"`                   //unique
+	Name                 string       `yaml:"Name"`                 //human-friendly
+	Workspace            string       `yaml:"Workspace"`            //Used to group related projects
+	DeleteCheckedOutCode bool         `yaml:"DeleteCheckedOutCode"` //whether to delete code checked out after scan is complete
+	Repositories         []Repository `yaml:"Repositories,omitempty"`
+	ScanIDs              []string     `yaml:"ScanIDs"`
+	ScanPolicy           ScanPolicy   `yaml:"ScanPolicy"`
 }
 
 //ProjectDescription used to create new/update projects
@@ -83,6 +84,8 @@ func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, e
 type Repository struct {
 	Location     string `yaml:"Location"`
 	LocationType string `yaml:"LocationType"` //filesystem, git, svn etc.
+	GitServiceID string `yaml:"GitServiceID"` /*if this repository is from a "private" on-prem instance,
+	the service ID is used to locate the instance and associated API keys etc*/
 }
 
 type Scan struct {

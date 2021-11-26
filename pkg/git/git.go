@@ -1,55 +1,106 @@
 package gitutils
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
-	"net/url"
+	"context"
+	"io"
+	"log"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
-	"gopkg.in/src-d/go-git.v4"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
 //Clone a repository,returning the location on disk where the clone is placed
-func Clone(repository string) (string, error) {
+func Clone(ctx context.Context, repository string, options *GitCloneOptions) (string, error) {
 	repository = strings.ToLower(repository)
 	//git@ is not supported, replace with https://
 	if strings.HasPrefix(repository, "git@") {
 		repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
 	}
 
-	dir, err := ioutil.TempDir("", "checkmate")
-	if err != nil {
-		return dir, err
-	}
-	_, err = git.PlainClone(dir, false, &git.CloneOptions{
-		URL: repository,
-		// Progress: os.Stdout,
-	})
+	dir, err := filepath.Abs(path.Clean(path.Join(options.BaseDir, strings.TrimSuffix(path.Base(repository), ".git"))))
+
+	defer func() {
+		if err != nil {
+			log.Printf("Error: %v\n", err)
+		}
+	}()
 
 	if err != nil {
-		os.RemoveAll(dir)
 		return "", err
+	}
+
+	if err = os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+
+	var repo *git.Repository
+
+	if directoryIsEmpty(dir) {
+
+		repo, err = git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
+			URL: repository,
+			// Progress: os.Stdout,
+			Auth: &http.BasicAuth{
+				Username: options.Auth.User,
+				Password: options.Auth.Credential,
+			},
+			NoCheckout: options.CommitHash != "",
+		})
+
+		if err != nil {
+			return "", err
+		}
+	} else {
+		//the directory already exists, so, simply fetch if possible
+		repo, err = git.PlainOpen(dir)
+
+		if err != nil {
+			return "", err
+		}
+
+		err = repo.FetchContext(ctx, &git.FetchOptions{
+			Auth: &http.BasicAuth{
+				Username: options.Auth.User,
+				Password: options.Auth.Credential,
+			},
+		})
+
+		if err != nil && err != git.NoErrAlreadyUpToDate {
+			return "", err
+		}
+
+		err = nil
+	}
+
+	if options.CommitHash != "" {
+		w, err := repo.Worktree()
+		if err != nil {
+			return "", err
+		}
+		err = w.Checkout(&git.CheckoutOptions{
+			Hash: plumbing.NewHash(options.CommitHash),
+		})
+		if err != nil {
+			return "", err
+		}
 	}
 	return dir, nil
 }
 
-func getGithubDetail(repo string) (githubRepo, error) {
-	var detail githubRepo
-	repURL, err := url.Parse(repo)
-	if err != nil {
-		return detail, err
-	}
-	api := strings.Replace(strings.TrimSuffix(repURL.String(), ".git"), "//github.com", "//api.github.com/repos", 1)
-	response, err := http.Get(api)
-	if err != nil {
-		return detail, err
-	}
-	err = json.NewDecoder(response.Body).Decode(&detail)
-	return detail, err
-}
+func directoryIsEmpty(dir string) bool {
 
-type githubRepo struct {
-	Size int64
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	_, err = f.Readdirnames(1)
+	return err == io.EOF
+
 }
