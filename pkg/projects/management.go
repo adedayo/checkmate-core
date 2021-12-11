@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -629,15 +628,8 @@ func (t projectSummarySlice) Swap(i, j int) {
 
 func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSummary) {
 
-	if files, err := ioutil.ReadDir(spm.projectsLocation); err == nil {
-		for _, file := range files {
-			if file.IsDir() {
-				summary := spm.GetProjectSummary(file.Name())
-				if summary.ID != "" {
-					summaries = append(summaries, summary)
-				}
-			}
-		}
+	for _, wd := range spm.GetWorkspaces().Details {
+		summaries = append(summaries, wd.ProjectSummaries...)
 	}
 	sorted := make(projectSummarySlice, 0)
 	sorted = append(sorted, summaries...)
