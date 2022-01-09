@@ -16,7 +16,6 @@ import (
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
 	gitutils "github.com/adedayo/checkmate-core/pkg/git"
 	"github.com/adedayo/checkmate-core/pkg/util"
-	"github.com/mitchellh/go-homedir"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,10 +62,7 @@ type WorkspaceSummariser func(pm ProjectManager, workspacesToUpdate []string) *W
 type ScanSummariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary
 
 func MakeSimpleProjectManager() ProjectManager {
-	location := "."
-	if loc, err := homedir.Expand("~/.checkmate/projects"); err == nil {
-		location = loc
-	}
+	location := path.Join(common.CHECKMATE_BASE_DIR, "projects")
 
 	pm := simpleProjectManager{
 		projectsLocation: location,

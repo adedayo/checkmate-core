@@ -6,13 +6,13 @@ import (
 	"os"
 	"path"
 
-	"github.com/mitchellh/go-homedir"
+	common "github.com/adedayo/checkmate-core/pkg"
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	CHECKMATE_USER            = "checkmate"
-	DEFAULT_CLONE_BASE_DIR, _ = homedir.Expand("~/.checkmate/code")
+	CHECKMATE_USER         = "checkmate"
+	DEFAULT_CLONE_BASE_DIR = path.Join(common.CHECKMATE_BASE_DIR, "code")
 )
 
 type GitAuth struct {
@@ -145,10 +145,7 @@ type ConfigManager interface {
 }
 
 func MakeConfigManager() ConfigManager {
-	location := "."
-	if loc, err := homedir.Expand("~/.checkmate/config"); err == nil {
-		location = loc
-	}
+	location := path.Join(common.CHECKMATE_BASE_DIR, "config")
 
 	cm := configManager{
 		configLocation: location,
