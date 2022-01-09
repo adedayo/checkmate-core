@@ -7,11 +7,6 @@ import (
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
 	"github.com/adedayo/checkmate-core/pkg/util"
-	"github.com/mitchellh/go-homedir"
-)
-
-var (
-	CHECKMATE_BASE_DIR, _ = homedir.Expand("~/.checkmate")
 )
 
 //IsConfidentialFile indicates whether a file is potentially confidential based on its name or extension, with a narrative indicating

@@ -6,13 +6,11 @@ import (
 	"os"
 	"path"
 
-	common "github.com/adedayo/checkmate-core/pkg"
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	CHECKMATE_USER         = "checkmate"
-	DEFAULT_CLONE_BASE_DIR = path.Join(common.CHECKMATE_BASE_DIR, "code")
+	CHECKMATE_USER = "checkmate"
 )
 
 type GitAuth struct {
@@ -144,8 +142,8 @@ type ConfigManager interface {
 	SaveConfig(*GitServiceConfig) error
 }
 
-func MakeConfigManager() ConfigManager {
-	location := path.Join(common.CHECKMATE_BASE_DIR, "config")
+func MakeConfigManager(baseDirectory string) ConfigManager {
+	location := path.Join(baseDirectory, "config")
 
 	cm := configManager{
 		configLocation: location,

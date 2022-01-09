@@ -14,7 +14,6 @@ import (
 
 	common "github.com/adedayo/checkmate-core/pkg"
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
-	gitutils "github.com/adedayo/checkmate-core/pkg/git"
 	"github.com/adedayo/checkmate-core/pkg/util"
 	"gopkg.in/yaml.v3"
 )
@@ -56,26 +55,33 @@ type ProjectManager interface {
 	GetCodeContext(cnt common.CodeContext) string
 	GetProjectLocation(projID string) string
 	GetScanLocation(projID, scanID string) string
+	//CheckMate base directory
+	GetBaseDir() string
 }
 
 type WorkspaceSummariser func(pm ProjectManager, workspacesToUpdate []string) *Workspace
 type ScanSummariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary
 
-func MakeSimpleProjectManager() ProjectManager {
-	location := path.Join(common.CHECKMATE_BASE_DIR, "projects")
+func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 
 	pm := simpleProjectManager{
-		projectsLocation: location,
+		baseDir:          checkMateBaseDir,
+		projectsLocation: path.Join(checkMateBaseDir, "projects"),
+		codeBaseDir:      path.Join(checkMateBaseDir, "code"),
 	}
 
 	//attempt to create the project location if it doesn't exist
-	os.MkdirAll(location, 0755)
+	os.MkdirAll(pm.projectsLocation, 0755)
 
 	return pm
 }
 
 type simpleProjectManager struct {
-	projectsLocation string
+	baseDir, projectsLocation, codeBaseDir string
+}
+
+func (spm simpleProjectManager) GetBaseDir() string {
+	return spm.baseDir
 }
 
 func (spm simpleProjectManager) GetProjectLocation(projID string) string {
@@ -101,7 +107,7 @@ func (spm simpleProjectManager) GetCodeContext(cnt common.CodeContext) (out stri
 		//likely a git checkout, try and open it if the codebase is still there
 		z := strings.Split(cnt.Location, ".git/")
 		if len(z) == 2 {
-			location := path.Join(gitutils.DEFAULT_CLONE_BASE_DIR, path.Base(z[0]), z[1])
+			location := path.Join(spm.codeBaseDir, path.Base(z[0]), z[1])
 			file, err := os.Open(location)
 			if err != nil {
 				return
