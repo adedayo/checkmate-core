@@ -10,6 +10,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	common "github.com/adedayo/checkmate-core/pkg"
@@ -19,13 +20,14 @@ import (
 )
 
 var (
-	defaultProjectFile     = "project.yaml"
-	defaultWorkspacesFile  = "workspaces.yaml"
-	projectSummaryFile     = "project-summary.yaml"
-	defaultScanFile        = "scanConfig.yaml"
-	defaultScanResultsFile = "scanResults.json"
-	defaultScanSummaryFile = "scan-summary.yaml"
-	rxFix                  = map[string]string{
+	defaultProjectFile        = "project.yaml"
+	defaultWorkspacesFile     = "workspaces.json"
+	defaultYAMLWorkspacesFile = "workspaces.yaml"
+	projectSummaryFile        = "project-summary.yaml"
+	defaultScanFile           = "scanConfig.yaml"
+	defaultScanResultsFile    = "scanResults.json"
+	defaultScanSummaryFile    = "scan-summary.yaml"
+	rxFix                     = map[string]string{
 		`.`: `[.]`,
 		`$`: `[$]`,
 		`^`: `[^]`,
@@ -34,7 +36,7 @@ var (
 )
 
 type ProjectManager interface {
-	GetWorkspaces() *Workspace
+	GetWorkspaces() (*Workspace, error)
 	SaveWorkspaces(*Workspace)
 	ListProjectSummaries() []ProjectSummary
 	GetProjectSummary(projectID string) ProjectSummary
@@ -59,25 +61,54 @@ type ProjectManager interface {
 	GetBaseDir() string
 }
 
-type WorkspaceSummariser func(pm ProjectManager, workspacesToUpdate []string) *Workspace
+type WorkspaceSummariser func(pm ProjectManager, workspacesToUpdate []string) (*Workspace, error)
 type ScanSummariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary
 
 func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 
 	pm := simpleProjectManager{
-		baseDir:          checkMateBaseDir,
-		projectsLocation: path.Join(checkMateBaseDir, "projects"),
-		codeBaseDir:      path.Join(checkMateBaseDir, "code"),
+		baseDir:            checkMateBaseDir,
+		projectsLocation:   path.Join(checkMateBaseDir, "projects"),
+		codeBaseDir:        path.Join(checkMateBaseDir, "code"),
+		workspaceFileMutex: &sync.RWMutex{},
 	}
 
 	//attempt to create the project location if it doesn't exist
 	os.MkdirAll(pm.projectsLocation, 0755)
+	//create workspace file if it doesn't exist
+	if _, err := os.Stat(path.Join(pm.projectsLocation, defaultWorkspacesFile)); os.IsNotExist(err) {
+		pm.SaveWorkspaces(&Workspace{})
+	}
 
+	//migrate old yaml workspace format
+	// MigrateYAMLWorkspace(&pm)
 	return pm
+}
+
+//utility to migate YAML format workspace
+func MigrateYAMLWorkspace(spm *simpleProjectManager) {
+	spm.workspaceFileMutex.Lock()
+	var ws Workspace
+	workspacesFile := path.Join(spm.projectsLocation, defaultYAMLWorkspacesFile)
+	data, err := os.ReadFile(workspacesFile)
+	if err == nil {
+		if e := yaml.Unmarshal(data, &ws); e != nil {
+			log.Printf("GetWorkspaces YAML Unmarshal: %v", e)
+			return
+		}
+		log.Printf("Migrating %v", ws)
+		spm.workspaceFileMutex.Unlock()
+		spm.SaveWorkspaces(&ws)
+	} else {
+		log.Printf("GetWorkspaces YAML ReadFile: %v", err)
+		spm.workspaceFileMutex.Unlock()
+		return
+	}
 }
 
 type simpleProjectManager struct {
 	baseDir, projectsLocation, codeBaseDir string
+	workspaceFileMutex                     *sync.RWMutex
 }
 
 func (spm simpleProjectManager) GetBaseDir() string {
@@ -288,39 +319,48 @@ func appendUnique(xs []string, x string) (out []string) {
 	return
 }
 
-func (spm simpleProjectManager) GetWorkspaces() *Workspace {
+func (spm simpleProjectManager) GetWorkspaces() (*Workspace, error) {
+	spm.workspaceFileMutex.Lock()
+	defer spm.workspaceFileMutex.Unlock()
+
 	var ws Workspace
 	workspacesFile := path.Join(spm.projectsLocation, defaultWorkspacesFile)
 	data, err := os.ReadFile(workspacesFile)
 	if err == nil {
-		if yaml.Unmarshal(data, &ws) != nil {
-			return &Workspace{}
+		if e := json.Unmarshal(data, &ws); e != nil {
+			log.Printf("GetWorkspaces Unmarshal: %v", e)
+			return &Workspace{}, e
 		}
 	} else {
-		return &Workspace{}
+		log.Printf("GetWorkspaces ReadFile: %v", err)
+		return &Workspace{}, err
 	}
-	return &ws
+	return &ws, nil
 }
 
 func (spm simpleProjectManager) SaveWorkspaces(ws *Workspace) {
 
+	spm.workspaceFileMutex.Lock()
+	defer spm.workspaceFileMutex.Unlock()
+
 	projectLoc := spm.projectsLocation
 	if err := os.MkdirAll(projectLoc, 0755); err != nil {
+		log.Printf("SaveWorkspaces: %v\n", err)
 		return
 	}
 
-	data, err := yaml.Marshal(ws)
+	wsPath := path.Join(projectLoc, defaultWorkspacesFile)
+	//important to truncate the file, as opening for read-write leads to errors in both yaml and json encoders
+	wsFile, err := os.Create(wsPath)
 	if err != nil {
+		log.Printf("SaveWorkspaces: %v\n", err)
 		return
 	}
-
-	wsFile, err := os.Create(path.Join(projectLoc, defaultWorkspacesFile))
-	if err != nil {
-		return
-	}
-
 	defer wsFile.Close()
-	if _, err = wsFile.Write(data); err != nil {
+
+	err = json.NewEncoder(wsFile).Encode(ws)
+	if err != nil {
+		log.Printf("SaveWorkspaces (encoding error): %v\n", err)
 		return
 	}
 
@@ -630,7 +670,13 @@ func (t projectSummarySlice) Swap(i, j int) {
 
 func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSummary) {
 
-	for _, wd := range spm.GetWorkspaces().Details {
+	wss, err := spm.GetWorkspaces()
+
+	if err != nil {
+		log.Printf("ListProjectSummaries: %v\n", err)
+		return
+	}
+	for _, wd := range wss.Details {
 		summaries = append(summaries, wd.ProjectSummaries...)
 	}
 	sorted := make(projectSummarySlice, 0)
@@ -659,7 +705,12 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 		project := spm.GetProject(projectID)
 		spm.saveProject(project, projectStatus{scanned: true, scanID: scanID, scanTime: out.Score.TimeStamp})
 		if wsSummariser != nil {
-			go spm.SaveWorkspaces(wsSummariser(spm, []string{project.Workspace}))
+			wss, err := wsSummariser(spm, []string{project.Workspace})
+			if err == nil {
+				go spm.SaveWorkspaces(wss)
+			} else {
+				log.Printf("UpdateProject: %v", err)
+			}
 		}
 	}
 }
@@ -687,7 +738,12 @@ func (spm simpleProjectManager) UpdateProject(projectID string, projectDescripti
 		}
 		proj.ScanPolicy = policy
 		if wsChange && wsSummariser != nil {
-			go spm.SaveWorkspaces(wsSummariser(spm, wspaces))
+			wss, err := wsSummariser(spm, wspaces)
+			if err == nil {
+				go spm.SaveWorkspaces(wss)
+			} else {
+				log.Printf("UpdateProject: %v", err)
+			}
 		}
 		return spm.saveProject(proj, projectStatus{modified: true, modifiedTime: time.Now()})
 	}
@@ -697,18 +753,33 @@ func (spm simpleProjectManager) UpdateProject(projectID string, projectDescripti
 }
 
 func (spm simpleProjectManager) saveProjectSummary(summary ProjectSummary) error {
+	wss, err := spm.GetWorkspaces()
+
+	if err != nil {
+		log.Printf("saveProjectSummary0: %v", err)
+		return err
+	}
+	if wss == nil {
+		wss = &Workspace{}
+	}
+	wss.SetProjectSummary(summary)
+	spm.SaveWorkspaces(wss)
+
 	projectLoc := path.Join(spm.projectsLocation, summary.ID)
 	projSummaryFile, err := os.Create(path.Join(projectLoc, projectSummaryFile))
 	if err != nil {
+		log.Printf("saveProjectSummary1: %v", err)
 		return err
 	}
 	defer projSummaryFile.Close()
 
 	summaryData, err := yaml.Marshal(summary)
 	if err != nil {
+		log.Printf("saveProjectSummary2: %v", err)
 		return err
 	}
 	if _, err = projSummaryFile.Write(summaryData); err != nil {
+		log.Printf("saveProjectSummary3: %v", err)
 		return err
 	}
 	return nil

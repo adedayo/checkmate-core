@@ -40,15 +40,20 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 
 	var repo *git.Repository
 
+	var auth *http.BasicAuth
+	if options.Auth != nil {
+		auth = &http.BasicAuth{
+			Username: options.Auth.User,
+			Password: options.Auth.Credential,
+		}
+	}
+
 	if directoryIsEmpty(dir) {
 
 		repo, err = git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
 			URL: repository,
 			// Progress: os.Stdout,
-			Auth: &http.BasicAuth{
-				Username: options.Auth.User,
-				Password: options.Auth.Credential,
-			},
+			Auth:       auth,
 			NoCheckout: options.CommitHash != "",
 		})
 
@@ -64,10 +69,7 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		}
 
 		err = repo.FetchContext(ctx, &git.FetchOptions{
-			Auth: &http.BasicAuth{
-				Username: options.Auth.User,
-				Password: options.Auth.Credential,
-			},
+			Auth: auth,
 		})
 
 		if err != nil && err != git.NoErrAlreadyUpToDate {

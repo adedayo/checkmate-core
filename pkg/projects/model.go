@@ -8,12 +8,34 @@ import (
 	"time"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
-	"github.com/adedayo/checkmate-core/pkg/scores"
 	"gopkg.in/yaml.v3"
 )
 
 type Workspace struct {
 	Details map[string]*WorkspaceDetail `json:"Details" yaml:"Details"`
+}
+
+func (wss *Workspace) SetProjectSummary(ps ProjectSummary) {
+	workspace := ps.Workspace
+	if wss.Details == nil {
+		wss.Details = make(map[string]*WorkspaceDetail)
+	}
+
+	if ws, exist := wss.Details[workspace]; exist {
+		for i, p := range ws.ProjectSummaries {
+			if p.ID == ps.ID {
+				ws.ProjectSummaries[i] = ps
+				return
+			}
+		}
+		ws.ProjectSummaries = append(ws.ProjectSummaries, ps)
+		wss.Details[workspace] = ws
+	} else {
+		wss.Details[workspace] = &WorkspaceDetail{
+			ProjectSummaries: []ProjectSummary{ps},
+		}
+	}
+
 }
 
 type WorkspaceDetail struct {
@@ -86,11 +108,12 @@ type Repository struct {
 	LocationType string `yaml:"LocationType"` //filesystem, git, svn etc.
 	GitServiceID string `yaml:"GitServiceID"` /*if this repository is from a "private" on-prem instance,
 	the service ID is used to locate the instance and associated API keys etc*/
+	Monitor bool `yaml:"Monitor"` //If this repository is continuously monitored for changes
 }
 
 type Scan struct {
 	ID         string
-	Score      scores.Score
+	Score      Score
 	Start, End time.Time
 	Issues     []diagnostics.SecurityDiagnostic
 	Policy     ScanPolicy
@@ -137,7 +160,7 @@ type ProjectSummary struct {
 	Repositories     []Repository `yaml:"Repositories,omitempty"`
 	LastScanID       string       `yaml:"LastScanID"`
 	LastScanSummary  ScanSummary  `yaml:"LastScanSummary"`
-	LastScore        scores.Score `yaml:"LastScore"`
+	LastScore        Score        `yaml:"LastScore"`
 	IsBeingScanned   bool         `yaml:"IsBeingScanned"`
 	CreationDate     time.Time    `yaml:"CreationDate"`
 	LastModification time.Time    `yaml:"LastModification"`
@@ -211,7 +234,7 @@ func (ps *ProjectSummary) MarshalJSON() ([]byte, error) {
 }
 
 type ScanSummary struct {
-	Score          scores.Score
+	Score          Score
 	AdditionalInfo interface{}
 }
 
