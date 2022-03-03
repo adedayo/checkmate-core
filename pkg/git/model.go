@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,6 +13,19 @@ import (
 var (
 	CHECKMATE_USER = "checkmate"
 )
+
+type Commit struct {
+	Author
+	Hash, Branch string
+	//Commit time
+	Time time.Time
+	//is the default branch to scan?
+	IsHead bool
+}
+
+type Author struct {
+	Name, Email string
+}
 
 type GitAuth struct {
 	User, Credential string
@@ -142,6 +156,7 @@ type ConfigManager interface {
 	SaveConfig(*GitServiceConfig) error
 }
 
+//Git Service Config Manager
 func MakeConfigManager(baseDirectory string) ConfigManager {
 	location := path.Join(baseDirectory, "config")
 

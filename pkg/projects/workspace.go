@@ -22,7 +22,7 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 			toUpdate[w] = nothing
 		}
 
-		ws := make(map[string][]ProjectSummary)
+		ws := make(map[string][]*ProjectSummary)
 		for _, s := range pm.ListProjectSummaries() {
 			w := s.Workspace
 			if _, present := toUpdate[w]; !present {
@@ -31,7 +31,7 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 			if wsw, present := ws[w]; present {
 				ws[w] = append(wsw, s)
 			} else {
-				ws[w] = []ProjectSummary{s}
+				ws[w] = []*ProjectSummary{s}
 			}
 		}
 
@@ -63,12 +63,10 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 			workspaceUniqueFiles[w] = files
 			model := GenerateModel(len(files), true, d)
 			model.Summarise()
-			// if model, err := asciidoc.ComputeMetrics(len(files), true, d); err == nil {
 			workspaceSummary.Details[w] = &WorkspaceDetail{
 				Summary:          model.Summarise(),
 				ProjectSummaries: ws[w],
 			}
-			// }
 		}
 
 		for w, wd := range workspaceSummary.Details {

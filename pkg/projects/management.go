@@ -3,11 +3,13 @@ package projects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -15,7 +17,10 @@ import (
 
 	common "github.com/adedayo/checkmate-core/pkg"
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
+	gitutils "github.com/adedayo/checkmate-core/pkg/git"
 	"github.com/adedayo/checkmate-core/pkg/util"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,8 +43,9 @@ var (
 type ProjectManager interface {
 	GetWorkspaces() (*Workspace, error)
 	SaveWorkspaces(*Workspace)
-	ListProjectSummaries() []ProjectSummary
-	GetProjectSummary(projectID string) ProjectSummary
+	SaveProjectSummary(*ProjectSummary) error
+	ListProjectSummaries() []*ProjectSummary
+	GetProjectSummary(projectID string) *ProjectSummary
 	GetProject(id string) Project //if project does not exist, we get an "empty" struct. Check the ID=id in client
 	GetScanConfig(projectID, scanID string) ScanPolicy
 	GetScanResults(projectID, scanID string) []*diagnostics.SecurityDiagnostic
@@ -59,6 +65,8 @@ type ProjectManager interface {
 	GetScanLocation(projID, scanID string) string
 	//CheckMate base directory
 	GetBaseDir() string
+	//Base directory for code checkout
+	GetCodeBaseDir() string
 }
 
 type WorkspaceSummariser func(pm ProjectManager, workspacesToUpdate []string) (*Workspace, error)
@@ -67,10 +75,11 @@ type ScanSummariser func(projectID, scanID string, issues []*diagnostics.Securit
 func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 
 	pm := simpleProjectManager{
-		baseDir:            checkMateBaseDir,
-		projectsLocation:   path.Join(checkMateBaseDir, "projects"),
-		codeBaseDir:        path.Join(checkMateBaseDir, "code"),
-		workspaceFileMutex: &sync.RWMutex{},
+		baseDir:                checkMateBaseDir,
+		projectsLocation:       path.Join(checkMateBaseDir, "projects"),
+		codeBaseDir:            path.Join(checkMateBaseDir, "code"),
+		workspaceFileMutex:     &sync.RWMutex{},
+		scanSummaryFileMutexes: make(map[string]*sync.RWMutex),
 	}
 
 	//attempt to create the project location if it doesn't exist
@@ -80,10 +89,37 @@ func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 		pm.SaveWorkspaces(&Workspace{})
 	}
 
+	//create empty repo commits file if it doesn't exist
+	// InitialiseCommitDB(pm)
+
 	//migrate old yaml workspace format
 	// MigrateYAMLWorkspace(&pm)
 	return pm
 }
+
+// func InitialiseCommitDB(pm ProjectManager) {
+// 	//create repo commits file if it doesn't exist
+// 	commitsLoc := path.Join(pm.GetBaseDir(), "repo_commits")
+// 	commitsPath := path.Join(commitsLoc, "RepositoryCommits.json")
+// 	if _, err := os.Stat(commitsPath); os.IsNotExist(err) {
+
+// 		if err := os.MkdirAll(commitsLoc, 0755); err != nil {
+// 			log.Printf("Error: %v", err)
+// 		}
+
+// 		//important to truncate the file, as opening for read-write leads to errors in both yaml and json encoders
+// 		comFile, err := os.Create(commitsPath)
+// 		if err != nil {
+// 			log.Printf("Error: %v", err)
+// 		}
+// 		defer comFile.Close()
+
+// 		json.NewEncoder(comFile).Encode(&gitutils.RepositoryCommitCollection{
+// 			Repositories: make(map[string]gitutils.AnnotatedCommits),
+// 		})
+
+// 	}
+// }
 
 //utility to migate YAML format workspace
 func MigrateYAMLWorkspace(spm *simpleProjectManager) {
@@ -109,10 +145,15 @@ func MigrateYAMLWorkspace(spm *simpleProjectManager) {
 type simpleProjectManager struct {
 	baseDir, projectsLocation, codeBaseDir string
 	workspaceFileMutex                     *sync.RWMutex
+	scanSummaryFileMutexes                 map[string]*sync.RWMutex //scanID -> file mutex
 }
 
 func (spm simpleProjectManager) GetBaseDir() string {
 	return spm.baseDir
+}
+
+func (spm simpleProjectManager) GetCodeBaseDir() string {
+	return spm.codeBaseDir
 }
 
 func (spm simpleProjectManager) GetProjectLocation(projID string) string {
@@ -534,7 +575,14 @@ func (spm simpleProjectManager) GetScanResults(projID, scanID string) (results [
 	return
 }
 
+//side effect of saving the scan summary in a file
 func (spm simpleProjectManager) summariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) (*ScanSummary, error) {
+	spm.scanSummaryFileMutexes[scanID] = &sync.RWMutex{}
+	spm.scanSummaryFileMutexes[scanID].Lock()
+	defer func() {
+		spm.scanSummaryFileMutexes[scanID].Unlock()
+	}()
+
 	results := spm.GetScanResults(projectID, scanID)
 	out := summariser(projectID, scanID, results)
 	scanSummaryFile, err := os.Create(path.Join(spm.projectsLocation, projectID, scanID, defaultScanSummaryFile))
@@ -546,6 +594,14 @@ func (spm simpleProjectManager) summariseScanResults(projectID, scanID string, s
 }
 
 func (spm simpleProjectManager) GetScanResultSummary(projectID, scanID string) (ScanSummary, error) {
+	if lock, exists := spm.scanSummaryFileMutexes[scanID]; exists {
+		lock.Lock()
+		defer func() {
+			lock.Unlock()
+			delete(spm.scanSummaryFileMutexes, scanID)
+		}()
+	}
+
 	var summary ScanSummary
 	file, err := os.Open(path.Join(spm.projectsLocation, projectID, scanID, defaultScanSummaryFile))
 	if err != nil {
@@ -580,18 +636,19 @@ func (spm simpleProjectManager) loadProject(projID string) (proj Project) {
 	return
 }
 
-func (spm simpleProjectManager) GetProjectSummary(projID string) (summary ProjectSummary) {
+func (spm simpleProjectManager) GetProjectSummary(projID string) *ProjectSummary {
 	projPath := path.Join(spm.projectsLocation, projID)
 	data, err := os.ReadFile(path.Join(projPath, projectSummaryFile))
+	summary := &ProjectSummary{}
 	if err == nil {
 		if yaml.Unmarshal(data, &summary) != nil {
-			return ProjectSummary{}
+			return summary
 		}
 	}
 	//if everything goes well. Load the retrieve the scan results series
 	summary.LastScore.SubMetrics = spm.loadHistoricalScores(projID)
 	summary.LastScanSummary = spm.loadLastScanSummary(projID)
-	return
+	return summary
 }
 
 type data struct {
@@ -617,8 +674,8 @@ func (t dataSlice) Swap(i, j int) {
 func (spm simpleProjectManager) loadHistoricalScores(projID string) map[string]float32 {
 	out := make(map[string]float32)
 	sortedData := make(dataSlice, 0)
-
-	for _, scanID := range spm.GetProject(projID).ScanIDs {
+	scanIDs := spm.GetProject(projID).ScanIDs
+	for _, scanID := range scanIDs {
 		summary, err := spm.GetScanResultSummary(projID, scanID)
 		if err == nil {
 			sortedData = append(sortedData, data{
@@ -643,8 +700,8 @@ func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary Scan
 
 	if len(project.ScanIDs) > 0 {
 		scanID := project.ScanIDs[len(project.ScanIDs)-1]
-		if file, err := os.Open(path.Join(spm.projectsLocation, projID, scanID, defaultScanSummaryFile)); err == nil {
-			yaml.NewDecoder(file).Decode(&summary)
+		if s, err := spm.GetScanResultSummary(projID, scanID); err == nil {
+			summary = s
 		}
 		// else {
 		//sometimes the scan has not been run/completed. This is not unusual
@@ -654,7 +711,7 @@ func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary Scan
 	return
 }
 
-type projectSummarySlice []ProjectSummary
+type projectSummarySlice []*ProjectSummary
 
 func (t projectSummarySlice) Len() int {
 	return len(t)
@@ -668,7 +725,7 @@ func (t projectSummarySlice) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
 
-func (spm simpleProjectManager) ListProjectSummaries() (summaries []ProjectSummary) {
+func (spm simpleProjectManager) ListProjectSummaries() (summaries []*ProjectSummary) {
 
 	wss, err := spm.GetWorkspaces()
 
@@ -697,11 +754,13 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	scanIDCallback(scanID)
 	sdc := createDiagnosticConsumer(spm.projectsLocation, projectID, scanID)
 	consumers = append(consumers, sdc)
+	scannedCommits := retrieveCommitsToBeScanned(projectID, spm)
 	scanStartTime := time.Now()
 	scanner.Scan(ctx, projectID, scanID, spm, progressMonitor, consumers...)
 	scanEndTime := time.Now()
 	sdc.close(scanStartTime, scanEndTime)
 	if out, err := spm.summariseScanResults(projectID, scanID, summariser); err == nil {
+		spm.updateScanHistory(projectID, scanID, scanEndTime, scannedCommits)
 		project := spm.GetProject(projectID)
 		spm.saveProject(project, projectStatus{scanned: true, scanID: scanID, scanTime: out.Score.TimeStamp})
 		if wsSummariser != nil {
@@ -715,18 +774,104 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	}
 }
 
+//retrieve the git commits (HEAD) of the repositories about to be scanned. repoLocation -> scannedCommit
+func retrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]scannedCommit {
+	proj := pm.GetProject(projectID)
+	out := make(map[string]scannedCommit)
+	for _, repo := range proj.Repositories {
+		if repo.LocationType == "git" {
+			if dir, err := filepath.Abs(path.Clean(path.Join(pm.GetBaseDir(), "code",
+				strings.TrimSuffix(path.Base(repo.Location), ".git")))); err == nil {
+				if gitRepo, err := git.PlainOpen(dir); err == nil {
+					var head, headBranch string
+					if h, err := gitRepo.Head(); err == nil {
+						head = h.Hash().String()
+						headBranch = h.Name().Short()
+					}
+
+					if cIter, err := gitRepo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime}); err == nil {
+						cIter.ForEach(func(c *object.Commit) error {
+							hash := c.Hash.String()
+							out[repo.Location] = scannedCommit{
+								Repository: repo.Location,
+								Commit: gitutils.Commit{
+									Hash:   hash,
+									Branch: headBranch,
+									IsHead: head == hash,
+									Time:   c.Author.When,
+									Author: gitutils.Author{
+										Name:  c.Author.Name,
+										Email: c.Author.Email,
+									},
+								},
+							}
+							return errors.New("") // just take the HEAD and don't proceed further
+						})
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+type scannedCommit struct {
+	Repository string
+	Commit     gitutils.Commit
+}
+
+//once the scan completes, store the scan ID, the git commit hash (HEAD) of the scanned repositories as well as the scan completion time
+func (spm simpleProjectManager) updateScanHistory(projectID, scanID string, scanTime time.Time, scannedCommits map[string]scannedCommit) error {
+	pSum := spm.GetProjectSummary(projectID)
+	for _, r := range pSum.Repositories {
+		if c, exists := scannedCommits[r.Location]; exists {
+			scanHistory := ScanHistory{
+				ScanID: scanID,
+				Commit: c.Commit,
+				Time:   scanTime,
+			}
+			branch := c.Commit.Branch
+			if pSum.ScanAndCommitHistories == nil {
+				pSum.ScanAndCommitHistories = make(map[string]map[string]RepositoryHistory)
+			}
+			if m, exists := pSum.ScanAndCommitHistories[r.Location]; exists {
+				if history, exists := m[branch]; exists {
+					history.ScanHistories = append(history.ScanHistories, scanHistory)
+					m[branch] = history
+				} else {
+					m[branch] = RepositoryHistory{
+						Repository:      r,
+						ScanHistories:   []ScanHistory{scanHistory},
+						CommitHistories: []gitutils.Commit{},
+					}
+				}
+				pSum.ScanAndCommitHistories[r.Location] = m
+			} else {
+				pSum.ScanAndCommitHistories[r.Location] = map[string]RepositoryHistory{
+					branch: {
+						Repository:      r,
+						ScanHistories:   []ScanHistory{scanHistory},
+						CommitHistories: []gitutils.Commit{},
+					},
+				}
+			}
+		}
+	}
+	return spm.SaveProjectSummary(pSum)
+}
+
 func (spm simpleProjectManager) UpdateProject(projectID string, projectDescription ProjectDescription,
 	wsSummariser WorkspaceSummariser) (project Project) {
 	proj := spm.GetProject(projectID)
 	if proj.ID == projectID {
 		//found project, update
 		proj.Name = projectDescription.Name
-		wspaces := []string{}
+		wspaces := []string{proj.Workspace}
 		wsChange := false
 		if proj.Workspace != projectDescription.Workspace {
 			//project workspace changing
 			wsChange = true
-			wspaces = []string{proj.Workspace, projectDescription.Workspace}
+			wspaces = append(wspaces, projectDescription.Workspace)
 		}
 		proj.Workspace = projectDescription.Workspace
 		proj.Repositories = projectDescription.Repositories
@@ -752,19 +897,7 @@ func (spm simpleProjectManager) UpdateProject(projectID string, projectDescripti
 
 }
 
-func (spm simpleProjectManager) saveProjectSummary(summary ProjectSummary) error {
-	wss, err := spm.GetWorkspaces()
-
-	if err != nil {
-		log.Printf("saveProjectSummary0: %v", err)
-		return err
-	}
-	if wss == nil {
-		wss = &Workspace{}
-	}
-	wss.SetProjectSummary(summary)
-	spm.SaveWorkspaces(wss)
-
+func (spm simpleProjectManager) SaveProjectSummary(summary *ProjectSummary) error {
 	projectLoc := path.Join(spm.projectsLocation, summary.ID)
 	projSummaryFile, err := os.Create(path.Join(projectLoc, projectSummaryFile))
 	if err != nil {
@@ -782,6 +915,18 @@ func (spm simpleProjectManager) saveProjectSummary(summary ProjectSummary) error
 		log.Printf("saveProjectSummary3: %v", err)
 		return err
 	}
+
+	//also update Workspaces with the new project summary
+	wss, err := spm.GetWorkspaces()
+	if err != nil {
+		log.Printf("saveProjectSummary0: %v", err)
+		return err
+	}
+	if wss == nil {
+		wss = &Workspace{}
+	}
+	wss.SetProjectSummary(summary, spm)
+
 	return nil
 }
 
@@ -807,18 +952,21 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 		return
 	}
 
+	//depending on project status, also update the project summary file
 	if status.created {
-		summary := ProjectSummary{
-			ID:           project.ID,
-			Name:         project.Name,
-			Workspace:    project.Workspace,
-			CreationDate: status.creationTime,
-			Repositories: project.Repositories,
+		summary := &ProjectSummary{
+			ID:                     project.ID,
+			Name:                   project.Name,
+			Workspace:              project.Workspace,
+			CreationDate:           status.creationTime,
+			Repositories:           project.Repositories,
+			ScanAndCommitHistories: make(map[string]map[string]RepositoryHistory),
 		}
 
-		spm.saveProjectSummary(summary)
+		spm.SaveProjectSummary(summary)
 	}
 
+	//update project summary on a new scan or modification
 	if status.scanned || status.modified || status.newScan {
 		summary := spm.GetProjectSummary(project.ID)
 		if summary.ID == project.ID {
@@ -846,7 +994,7 @@ func (spm simpleProjectManager) saveProject(project Project, status projectStatu
 				summary.LastScanID = status.scanID
 				summary.LastModification = status.modifiedTime
 			}
-			spm.saveProjectSummary(summary)
+			spm.SaveProjectSummary(summary)
 		}
 	}
 

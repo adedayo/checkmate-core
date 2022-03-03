@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
+	gitutils "github.com/adedayo/checkmate-core/pkg/git"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,16 +17,17 @@ type Workspace struct {
 	Details map[string]*WorkspaceDetail `json:"Details" yaml:"Details"`
 }
 
-func (wss *Workspace) SetProjectSummary(ps ProjectSummary) {
+func (wss *Workspace) SetProjectSummary(ps *ProjectSummary, pm ProjectManager) {
+	defer pm.SaveWorkspaces(wss)
 	workspace := ps.Workspace
 	if wss.Details == nil {
 		wss.Details = make(map[string]*WorkspaceDetail)
 	}
-
 	if ws, exist := wss.Details[workspace]; exist {
 		for i, p := range ws.ProjectSummaries {
 			if p.ID == ps.ID {
 				ws.ProjectSummaries[i] = ps
+				wss.Details[workspace] = ws
 				return
 			}
 		}
@@ -32,15 +35,15 @@ func (wss *Workspace) SetProjectSummary(ps ProjectSummary) {
 		wss.Details[workspace] = ws
 	} else {
 		wss.Details[workspace] = &WorkspaceDetail{
-			ProjectSummaries: []ProjectSummary{ps},
+			Summary:          &ScanSummary{},
+			ProjectSummaries: []*ProjectSummary{ps},
 		}
 	}
-
 }
 
 type WorkspaceDetail struct {
-	Summary          *ScanSummary     `json:"Summary" yaml:"Summary"`
-	ProjectSummaries []ProjectSummary `json:"ProjectSummaries" yaml:"ProjectSummaries"`
+	Summary          *ScanSummary      `json:"Summary" yaml:"Summary"`
+	ProjectSummaries []*ProjectSummary `json:"ProjectSummaries" yaml:"ProjectSummaries"`
 }
 
 type Project struct {
@@ -111,6 +114,20 @@ type Repository struct {
 	Monitor bool `yaml:"Monitor"` //If this repository is continuously monitored for changes
 }
 
+func (repo Repository) IsGit() bool {
+	return repo.LocationType == "git"
+}
+
+func (repo Repository) IsFileSystem() bool {
+	return repo.LocationType == "filesystem"
+}
+
+type ScanHistory struct {
+	Time   time.Time
+	ScanID string
+	Commit gitutils.Commit
+}
+
 type Scan struct {
 	ID         string
 	Score      Score
@@ -153,18 +170,78 @@ func (sp ScanPolicy) MarshalJSON() ([]byte, error) {
 	})
 }
 
+//Scan and Commit history of a repository branch
+type RepositoryHistory struct {
+	Repository      Repository
+	ScanHistories   []ScanHistory
+	CommitHistories []gitutils.Commit
+}
+
 type ProjectSummary struct {
-	ID               string       `yaml:"ID"`
-	Name             string       `yaml:"Name"`
-	Workspace        string       `yaml:"Workspace"` //Used to group related projects
-	Repositories     []Repository `yaml:"Repositories,omitempty"`
-	LastScanID       string       `yaml:"LastScanID"`
-	LastScanSummary  ScanSummary  `yaml:"LastScanSummary"`
-	LastScore        Score        `yaml:"LastScore"`
-	IsBeingScanned   bool         `yaml:"IsBeingScanned"`
-	CreationDate     time.Time    `yaml:"CreationDate"`
-	LastModification time.Time    `yaml:"LastModification"`
-	LastScan         time.Time    `yaml:"LastScan"`
+	ID           string       `yaml:"ID"`
+	Name         string       `yaml:"Name"`
+	Workspace    string       `yaml:"Workspace"` //Used to group related projects
+	Repositories []Repository `yaml:"Repositories,omitempty"`
+	//From RepoLocation -> branch -> RepoHistory
+	ScanAndCommitHistories map[string]map[string]RepositoryHistory `yaml:"ScanAndCommitHistories,omitempty" json:"ScanAndCommitHistories,omitempty"`
+	LastScanID             string                                  `yaml:"LastScanID"`
+	LastScanSummary        ScanSummary                             `yaml:"LastScanSummary"`
+	LastScore              Score                                   `yaml:"LastScore"`
+	IsBeingScanned         bool                                    `yaml:"IsBeingScanned"`
+	CreationDate           time.Time                               `yaml:"CreationDate"`
+	LastModification       time.Time                               `yaml:"LastModification"`
+	LastScan               time.Time                               `yaml:"LastScan"`
+}
+
+func (ps *ProjectSummary) GetCommitsByBranch(location string) map[string][]gitutils.Commit {
+	br := make(map[string][]gitutils.Commit)
+
+	if ps.ScanAndCommitHistories == nil {
+		ps.ScanAndCommitHistories = make(map[string]map[string]RepositoryHistory)
+	}
+	if repoHistory, exists := ps.ScanAndCommitHistories[location]; exists {
+		for branch, rh := range repoHistory {
+			br[branch] = rh.CommitHistories
+		}
+	}
+
+	return br
+}
+
+func (ps ProjectSummary) GetLastCommitByBranch(location string) map[string][]gitutils.Commit {
+	out := make(map[string][]gitutils.Commit)
+
+	for branch, commits := range ps.GetCommitsByBranch(location) {
+		out[branch] = []gitutils.Commit{}
+		if len(commits) > 0 {
+			sort.SliceStable(commits, func(i, j int) bool {
+				a := commits[i].Time
+				b := commits[j].Time
+				return a.After(b) || a.Equal(b)
+			})
+			out[branch] = []gitutils.Commit{commits[0]}
+		}
+	}
+	return out
+}
+
+func (ps *ProjectSummary) GetScansByBranch(location string) map[string][]gitutils.Commit {
+	out := make(map[string][]gitutils.Commit)
+
+	if ps.ScanAndCommitHistories == nil {
+		ps.ScanAndCommitHistories = make(map[string]map[string]RepositoryHistory)
+	}
+
+	if repoHistory, exists := ps.ScanAndCommitHistories[location]; exists {
+		for branch, rh := range repoHistory {
+			out[branch] = []gitutils.Commit{}
+			for _, sh := range rh.ScanHistories {
+				out[branch] = append(out[branch], sh.Commit)
+			}
+
+		}
+	}
+	return out
 }
 
 func (ps ProjectSummary) CSVHeaders() []string {
@@ -235,6 +312,7 @@ func (ps *ProjectSummary) MarshalJSON() ([]byte, error) {
 
 type ScanSummary struct {
 	Score          Score
+	CommitHash     string
 	AdditionalInfo interface{}
 }
 
