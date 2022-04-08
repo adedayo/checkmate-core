@@ -872,8 +872,8 @@ func (spm simpleProjectManager) UpdateProject(projectID string, projectDescripti
 			//project workspace changing
 			wsChange = true
 			wspaces = append(wspaces, projectDescription.Workspace)
+			proj.Workspace = projectDescription.Workspace
 		}
-		proj.Workspace = projectDescription.Workspace
 		proj.Repositories = projectDescription.Repositories
 		policy := ScanPolicy{
 			ID:           util.NewRandomUUID().String(),
