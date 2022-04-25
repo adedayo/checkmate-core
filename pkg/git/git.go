@@ -53,8 +53,9 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		repo, err = git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
 			URL: repository,
 			// Progress: os.Stdout,
-			Auth:       auth,
-			NoCheckout: options.CommitHash != "",
+			Auth:            auth,
+			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
+			NoCheckout:      options.CommitHash != "",
 		})
 
 		if err != nil {
@@ -69,7 +70,8 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		}
 
 		err = repo.FetchContext(ctx, &git.FetchOptions{
-			Auth: auth,
+			Auth:            auth,
+			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
 		})
 
 		if err != nil && err != git.NoErrAlreadyUpToDate {

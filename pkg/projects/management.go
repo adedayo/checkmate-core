@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -85,7 +86,7 @@ func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 	//attempt to create the project location if it doesn't exist
 	os.MkdirAll(pm.projectsLocation, 0755)
 	//create workspace file if it doesn't exist
-	if _, err := os.Stat(path.Join(pm.projectsLocation, defaultWorkspacesFile)); os.IsNotExist(err) {
+	if _, err := os.Stat(path.Join(pm.projectsLocation, defaultWorkspacesFile)); errors.Is(err, fs.ErrNotExist) {
 		pm.SaveWorkspaces(&Workspace{})
 	}
 
