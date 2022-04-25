@@ -758,9 +758,10 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	scannedCommits := retrieveCommitsToBeScanned(projectID, spm)
 	scanStartTime := time.Now()
 	//set "being-scanned" flag
-	summary := spm.GetProjectSummary(projectID)
-	summary.IsBeingScanned = true
-	spm.SaveProjectSummary(summary)
+	if summary := spm.GetProjectSummary(projectID); summary.ID == projectID {
+		summary.IsBeingScanned = true
+		spm.SaveProjectSummary(summary)
+	}
 	scanner.Scan(ctx, projectID, scanID, spm, progressMonitor, consumers...)
 	scanEndTime := time.Now()
 	sdc.close(scanStartTime, scanEndTime)
