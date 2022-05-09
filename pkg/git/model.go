@@ -1,6 +1,7 @@
 package gitutils
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +12,8 @@ import (
 )
 
 var (
-	CHECKMATE_USER = "checkmate"
+	CHECKMATE_USER   = "checkmate"
+	gitConfigManager ConfigManager
 )
 
 type Commit struct {
@@ -73,7 +75,7 @@ func (svc GitService) MakeAuth() *GitAuth {
 
 type GitServiceConfig struct {
 	GitServices map[GitServiceType]map[string]*GitService
-	manager     *configManager
+	// manager     *configManager
 }
 
 func (gsc GitServiceConfig) IsServiceConfigured(service GitServiceType) bool {
@@ -112,31 +114,34 @@ func (gsc *GitServiceConfig) AddService(service *GitService) error {
 	} else {
 		gsc.GitServices[serviceType] = map[string]*GitService{service.ID: service}
 	}
-	return gsc.manager.SaveConfig(gsc)
+	if gitConfigManager == nil {
+		return errors.New("No Git configiration manager registered")
+	}
+	return gitConfigManager.SaveConfig(gsc)
 }
 
 type configManager struct {
 	configLocation string
 }
 
-func (cm configManager) GetConfig() *GitServiceConfig {
+func (cm configManager) GetConfig() (*GitServiceConfig, error) {
 	conf := &GitServiceConfig{
 		GitServices: make(map[GitServiceType]map[string]*GitService),
-		manager:     &cm,
 	}
 
 	file, err := os.Open(path.Join(cm.configLocation, GIT_SERVICE_CONFIG_FILE))
 	if err != nil {
 		log.Printf("Error opening Git Service Configuration: %v", err)
-		return conf
+		return conf, err
 	}
 	defer file.Close()
 
 	if err := yaml.NewDecoder(file).Decode(conf); err != nil {
 		log.Printf("Error opening Git Service Configuration: %v", err)
+		return conf, err
 	}
 
-	return conf
+	return conf, nil
 }
 
 func (cm configManager) SaveConfig(conf *GitServiceConfig) error {
@@ -152,20 +157,20 @@ func (cm configManager) SaveConfig(conf *GitServiceConfig) error {
 }
 
 type ConfigManager interface {
-	GetConfig() *GitServiceConfig
+	GetConfig() (*GitServiceConfig, error)
 	SaveConfig(*GitServiceConfig) error
 }
 
 //Git Service Config Manager
-func MakeConfigManager(baseDirectory string) ConfigManager {
+func NewGitConfigManager(baseDirectory string) ConfigManager {
 	location := path.Join(baseDirectory, "config")
 
-	cm := configManager{
+	gitConfigManager = configManager{
 		configLocation: location,
 	}
 
 	//attempt to create the project location if it doesn't exist
 	os.MkdirAll(location, 0755)
 
-	return &cm
+	return gitConfigManager
 }

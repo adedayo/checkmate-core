@@ -39,11 +39,12 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 
 		for w, pps := range ws {
 			for _, ps := range pps {
-
-				if sds, present := ds[w]; present {
-					ds[w] = append(sds, pm.GetScanResults(ps.ID, ps.LastScanID)...)
-				} else {
-					ds[w] = pm.GetScanResults(ps.ID, ps.LastScanID)
+				if results, err := pm.GetScanResults(ps.ID, ps.LastScanID); err == nil {
+					if sds, present := ds[w]; present {
+						ds[w] = append(sds, results...)
+					} else {
+						ds[w] = results
+					}
 				}
 			}
 		}

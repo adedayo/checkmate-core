@@ -185,12 +185,26 @@ type ProjectSummary struct {
 	//From RepoLocation -> branch -> RepoHistory
 	ScanAndCommitHistories map[string]map[string]RepositoryHistory `yaml:"ScanAndCommitHistories,omitempty" json:"ScanAndCommitHistories,omitempty"`
 	LastScanID             string                                  `yaml:"LastScanID"`
+	ScanIDs                []string                                `yaml:"ScanIDs"`
+	ScanPolicy             ScanPolicy                              `yaml:"ScanPolicy"`
+	ScoreTrend             map[string]float32                      `yaml:"ScoreTrend,omitempty"` // use this to record arbitrary numeric scores, even time series of trends etc.
 	LastScanSummary        ScanSummary                             `yaml:"LastScanSummary"`
 	LastScore              Score                                   `yaml:"LastScore"`
 	IsBeingScanned         bool                                    `yaml:"IsBeingScanned"`
 	CreationDate           time.Time                               `yaml:"CreationDate"`
 	LastModification       time.Time                               `yaml:"LastModification"`
 	LastScan               time.Time                               `yaml:"LastScan"`
+}
+
+func (p ProjectSummary) toProject() Project {
+	return Project{
+		ID:           p.ID,
+		Name:         p.Name,
+		Workspace:    p.Workspace,
+		Repositories: p.Repositories,
+		ScanIDs:      p.ScanIDs,
+		ScanPolicy:   p.ScanPolicy,
+	}
 }
 
 func (ps *ProjectSummary) GetCommitsByBranch(location string) map[string][]gitutils.Commit {
