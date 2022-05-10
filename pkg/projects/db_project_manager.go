@@ -15,6 +15,7 @@ import (
 
 	common "github.com/adedayo/checkmate-core/pkg"
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
+	gitutils "github.com/adedayo/checkmate-core/pkg/git"
 	"github.com/adedayo/checkmate-core/pkg/util"
 	"github.com/dgraph-io/badger/v3"
 	"gopkg.in/yaml.v3"
@@ -38,7 +39,13 @@ func NewDBProjectManager(checkMateBaseDir string) (ProjectManager, error) {
 	//attempt to create the project location if it doesn't exist
 	os.MkdirAll(pm.projectsLocation, 0755)
 
-	db, err := badger.Open(badger.DefaultOptions(pm.projectsLocation))
+	opts := badger.DefaultOptions(pm.projectsLocation)
+
+	//clean up lock on the DB if previous crash
+	lockFile := path.Join(opts.Dir, "LOCK")
+	_ = os.Remove(lockFile)
+
+	db, err := badger.Open(opts)
 	if err != nil {
 		return pm, err
 	}
@@ -126,8 +133,21 @@ func searchFileBasedProjects(pm simpleProjectManager) (summaries []*ProjectSumma
 type dbProjectManager struct {
 	baseDir, projectsLocation, codeBaseDir                        string
 	db                                                            *badger.DB
+	gitConfigManager                                              gitutils.GitConfigManager
 	projectTable, workspaceTable, scanDiagnosticsTable            string
 	scanPolicyTable, scanSummaryTable, gitServiceTable, initTable string
+}
+
+// GetGitConfigManager implements ProjectManager
+func (pm dbProjectManager) GetGitConfigManager() (gitutils.GitConfigManager, error) {
+
+	if pm.gitConfigManager == nil {
+		cm, e := gitutils.NewDBGitConfigManager(pm.baseDir)
+		pm.gitConfigManager = cm
+		return cm, e
+	}
+
+	return pm.gitConfigManager, nil
 }
 
 func (pm dbProjectManager) Close() error {

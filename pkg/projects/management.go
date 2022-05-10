@@ -64,6 +64,7 @@ type ProjectManager interface {
 	RemediateIssue(exclude diagnostics.ExcludeRequirement) diagnostics.PolicyUpdateResult
 	GetCodeContext(cnt common.CodeContext) string
 	GetProjectLocation(projID string) string
+	GetGitConfigManager() (gitutils.GitConfigManager, error)
 	// GetScanLocation(projID, scanID string) string
 	//CheckMate base directory
 	GetBaseDir() string
@@ -150,6 +151,11 @@ type simpleProjectManager struct {
 	baseDir, projectsLocation, codeBaseDir string
 	workspaceFileMutex                     *sync.RWMutex
 	scanSummaryFileMutexes                 map[string]*sync.RWMutex //scanID -> file mutex
+}
+
+// GetGitConfigManager implements ProjectManager
+func (spm simpleProjectManager) GetGitConfigManager() (gitutils.GitConfigManager, error) {
+	return gitutils.NewGitConfigManager(spm.GetBaseDir()), nil
 }
 
 func (spm simpleProjectManager) GetBaseDir() string {

@@ -10,8 +10,17 @@ import (
 	"github.com/dgraph-io/badger/v3"
 )
 
+var (
+	gitConfigManagers = map[string]GitConfigManager{} // checkmateBaseDir -> ConfigManager
+)
+
 //Git Service Config Manager
-func NewDBGitConfigManager(checkMateBaseDirectory string) (ConfigManager, error) {
+func NewDBGitConfigManager(checkMateBaseDirectory string) (GitConfigManager, error) {
+
+	//ensure the DB is singleton per base dir
+	if configM, exists := gitConfigManagers[checkMateBaseDirectory]; exists {
+		return configM, nil
+	}
 
 	cm := &dbGitConfigManager{
 		baseDir:        checkMateBaseDirectory,
@@ -23,12 +32,19 @@ func NewDBGitConfigManager(checkMateBaseDirectory string) (ConfigManager, error)
 	//attempt to create the git config directory if it doesn't exist
 	os.MkdirAll(cm.configLocation, 0755)
 
-	db, err := badger.Open(badger.DefaultOptions(cm.configLocation))
+	opts := badger.DefaultOptions(cm.configLocation)
+
+	//clean up lock on the DB if previous crash
+	lockFile := path.Join(opts.Dir, "LOCK")
+	_ = os.Remove(lockFile)
+
+	db, err := badger.Open(opts)
 	if err != nil {
 		return cm, err
 	}
 	cm.db = db
 	gitConfigManager = cm
+	gitConfigManagers[checkMateBaseDirectory] = cm
 
 	//import data from the YAML-based config if it exists
 	importGitYAMLData(cm)

@@ -13,7 +13,7 @@ import (
 
 var (
 	CHECKMATE_USER   = "checkmate"
-	gitConfigManager ConfigManager
+	gitConfigManager GitConfigManager
 )
 
 type Commit struct {
@@ -156,13 +156,13 @@ func (cm configManager) SaveConfig(conf *GitServiceConfig) error {
 	return encoder.Encode(conf)
 }
 
-type ConfigManager interface {
+type GitConfigManager interface {
 	GetConfig() (*GitServiceConfig, error)
 	SaveConfig(*GitServiceConfig) error
 }
 
 //Git Service Config Manager
-func NewGitConfigManager(baseDirectory string) ConfigManager {
+func NewGitConfigManager(baseDirectory string) GitConfigManager {
 	location := path.Join(baseDirectory, "config")
 
 	gitConfigManager = configManager{

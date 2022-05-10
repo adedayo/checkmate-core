@@ -26,7 +26,7 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 
 	defer func() {
 		if err != nil {
-			log.Printf("Error: %v\n", err)
+			log.Printf("Error: %v, %s, %#v\n", err, dir, options)
 		}
 	}()
 
