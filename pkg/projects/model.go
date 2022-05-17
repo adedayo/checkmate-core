@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +41,26 @@ func (wss *Workspace) SetProjectSummary(ps *ProjectSummary, pm ProjectManager) {
 			ProjectSummaries: []*ProjectSummary{ps},
 		}
 	}
+}
+
+func (wss *Workspace) RemoveProjectSummary(ps *ProjectSummary, pm ProjectManager) error {
+
+	workspace := ps.Workspace
+	if wss.Details == nil {
+		wss.Details = make(map[string]*WorkspaceDetail)
+	}
+	if ws, exist := wss.Details[workspace]; exist {
+		newSummaries := []*ProjectSummary{}
+		for _, p := range ws.ProjectSummaries {
+			if p.ID != ps.ID {
+				newSummaries = append(newSummaries, p)
+			}
+		}
+		ws.ProjectSummaries = newSummaries
+		wss.Details[workspace] = ws
+	}
+
+	return pm.SaveWorkspaces(wss)
 }
 
 type WorkspaceDetail struct {
@@ -120,6 +142,25 @@ func (repo Repository) IsGit() bool {
 
 func (repo Repository) IsFileSystem() bool {
 	return repo.LocationType == "filesystem"
+}
+
+func (repo Repository) GetCodeLocation(pm ProjectManager, projectID string) string {
+	if repo.IsGit() {
+
+		repository := strings.ToLower(repo.Location)
+		//git@ is not supported, replace with https://
+		if strings.HasPrefix(repository, "git@") {
+			repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
+		}
+
+		dir, err := filepath.Abs(path.Clean(path.Join(pm.GetCodeBaseDir(), projectID, strings.TrimSuffix(path.Base(repository), ".git"))))
+
+		if err == nil {
+			return dir
+		}
+		return repository
+	}
+	return repo.Location
 }
 
 type ScanHistory struct {

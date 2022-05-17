@@ -32,6 +32,7 @@ var (
 	projectSummaryFile        = "project-summary.yaml"
 	defaultScanFile           = "scanConfig.yaml"
 	defaultScanResultsFile    = "scanResults.json"
+	defaultCodeDirPrefix      = "code"
 	defaultScanSummaryFile    = "scan-summary.yaml"
 	rxFix                     = map[string]string{
 		`.`: `[.]`,
@@ -47,7 +48,8 @@ type ProjectManager interface {
 	SaveProjectSummary(*ProjectSummary) error
 	ListProjectSummaries() []*ProjectSummary
 	GetProjectSummary(projectID string) (*ProjectSummary, error)
-	GetProject(id string) (Project, error) //if project does not exist, we get an "empty" struct. Check the ID=id in client
+	GetProject(id string) (Project, error)
+	DeleteProject(id string) error
 	GetScanConfig(projectID, scanID string) (*ScanPolicy, error)
 	GetScanResults(projectID, scanID string) ([]*diagnostics.SecurityDiagnostic, error)
 	GetScanResultSummary(projectID, scanID string) (ScanSummary, error)
@@ -82,7 +84,7 @@ func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 	pm := simpleProjectManager{
 		baseDir:                checkMateBaseDir,
 		projectsLocation:       path.Join(checkMateBaseDir, "projects"),
-		codeBaseDir:            path.Join(checkMateBaseDir, "code"),
+		codeBaseDir:            path.Join(checkMateBaseDir, defaultCodeDirPrefix),
 		workspaceFileMutex:     &sync.RWMutex{},
 		scanSummaryFileMutexes: make(map[string]*sync.RWMutex),
 	}
@@ -151,6 +153,28 @@ type simpleProjectManager struct {
 	baseDir, projectsLocation, codeBaseDir string
 	workspaceFileMutex                     *sync.RWMutex
 	scanSummaryFileMutexes                 map[string]*sync.RWMutex //scanID -> file mutex
+}
+
+// DeleteProject implements ProjectManager
+func (pm simpleProjectManager) DeleteProject(id string) error {
+	proj, err := pm.GetProjectSummary(id)
+	if err != nil {
+		return err
+	}
+
+	//remove project from workspaces
+	if ws, err := pm.GetWorkspaces(); err == nil {
+		ws.RemoveProjectSummary(proj, pm)
+	}
+	//delete project metadata
+	os.RemoveAll(pm.GetProjectLocation(id))
+	//delete checked out code
+	for _, r := range proj.Repositories {
+		if r.IsGit() {
+			os.RemoveAll(r.GetCodeLocation(pm, id))
+		}
+	}
+	return nil
 }
 
 // GetGitConfigManager implements ProjectManager
@@ -834,7 +858,7 @@ func retrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]
 
 		for _, repo := range proj.Repositories {
 			if repo.LocationType == "git" {
-				if dir, err := filepath.Abs(path.Clean(path.Join(pm.GetBaseDir(), "code",
+				if dir, err := filepath.Abs(path.Clean(path.Join(pm.GetCodeBaseDir(), projectID,
 					strings.TrimSuffix(path.Base(repo.Location), ".git")))); err == nil {
 					if gitRepo, err := git.PlainOpen(dir); err == nil {
 						var head, headBranch string

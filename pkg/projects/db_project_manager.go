@@ -26,7 +26,7 @@ func NewDBProjectManager(checkMateBaseDir string) (ProjectManager, error) {
 	pm := dbProjectManager{
 		baseDir:              checkMateBaseDir,
 		projectsLocation:     path.Join(checkMateBaseDir, "projects_db"),
-		codeBaseDir:          path.Join(checkMateBaseDir, "code"),
+		codeBaseDir:          path.Join(checkMateBaseDir, defaultCodeDirPrefix),
 		projectTable:         "proj_",
 		workspaceTable:       "works_",
 		scanDiagnosticsTable: "scans_",
@@ -138,6 +138,28 @@ type dbProjectManager struct {
 	scanPolicyTable, scanSummaryTable, gitServiceTable, initTable string
 }
 
+// DeleteProject implements ProjectManager
+func (pm dbProjectManager) DeleteProject(id string) error {
+	proj, err := pm.GetProjectSummary(id)
+	if err != nil {
+		return err
+	}
+
+	//delete project
+	pm.deleteProjectSummary(id)
+	//remove it from workspaces
+	if ws, err := pm.GetWorkspaces(); err == nil {
+		ws.RemoveProjectSummary(proj, pm)
+	}
+	//delete checked out code
+	for _, r := range proj.Repositories {
+		if r.IsGit() {
+			os.RemoveAll(r.GetCodeLocation(pm, id))
+		}
+	}
+	return nil
+}
+
 // GetGitConfigManager implements ProjectManager
 func (pm dbProjectManager) GetGitConfigManager() (gitutils.GitConfigManager, error) {
 
@@ -240,6 +262,12 @@ func (pm dbProjectManager) GetProjectSummary(projectID string) (*ProjectSummary,
 		return e
 	})
 	return &pSum, err
+}
+
+func (pm dbProjectManager) deleteProjectSummary(projectID string) error {
+	return pm.db.Update(func(txn *badger.Txn) error {
+		return txn.Delete(pm.toProjectKey(projectID))
+	})
 }
 
 // GetScanConfig implements ProjectManager
