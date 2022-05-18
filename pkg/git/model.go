@@ -63,6 +63,8 @@ type GitService struct {
 	API_Key         string
 	ID              string         //some unique ID for this service instance
 	Name            string         //user-friendly name
+	AccountName     string         //used to track Github user/org name
+	AccountType     string         //(GitHub) User or Organization
 	Type            GitServiceType `json:"_"`
 }
 
