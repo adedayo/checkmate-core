@@ -32,6 +32,7 @@ type Model struct {
 	NumberOfSecretsReuse             int                                          `json:"numberOfSecretsReuse" yaml:"numberOfSecretsReuse"`
 	ReusedSecrets                    map[string][]*diagnostics.SecurityDiagnostic `yaml:"-" json:"-"`
 	ProdAndNonProdSecretReuse        []ReusedSecret                               `json:"prodAndNonProdSecretReuse" yaml:"prodAndNonProdSecretReuse"`
+	ProductionSecretsCount           int                                          `json:"prodSecretsCount" yaml:"prodSecretsCount"`
 	CriticalProdUsedInNonProdCount   int                                          `yaml:"criticalProdUsedInNonProdCount" json:"criticalProdUsedInNonProdCount"`
 	HighProdUsedInNonProdCount       int                                          `yaml:"highProdUsedInNonProdCount" json:"highProdUsedInNonProdCount"`
 	MediumProdUsedInNonProdCount     int                                          `yaml:"mediumProdUsedInNonProdCount" json:"mediumProdUsedInNonProdCount"`
@@ -69,6 +70,7 @@ type ModelCounts struct {
 	MediumSensitiveFileCount         int     `yaml:"mediumSensitiveFileCount" json:"mediumSensitiveFileCount"`
 	LowSensitiveFileCount            int     `yaml:"lowSensitiveFileCount" json:"lowSensitiveFileCount"`
 	InfoSensitiveFileCount           int     `yaml:"infoSensitiveFileCount" json:"infoSensitiveFileCount"`
+	ProductionSecretsCount           int     `json:"prodSecretsCount" yaml:"prodSecretsCount"`
 	NonProdSensitiveFileCount        int     `yaml:"nonProdSensitiveFileCount" json:"nonProdSensitiveFileCount"`
 	SecretReuseCountBuckets          []int   `yaml:"secretReuseCountBuckets" json:"secretReuseCountBuckets"`
 }
@@ -233,6 +235,9 @@ func GenerateModel(fileCount int, showSource bool, issues []*diagnostics.Securit
 			//production certs and keystores etc.
 			model.ProductionConfidentialFilesCount++
 		}
+		if !issue.HasTag("test") {
+			model.ProductionSecretsCount++
+		}
 	}
 
 	model.ReusedSecrets = sameSha
@@ -315,6 +320,7 @@ func (m *Model) computeMetricBases() ModelCounts {
 		InfoSensitiveFileCount:           m.InfoSensitiveFileCount,
 		NonProdSensitiveFileCount:        m.NonProdSensitiveFileCount,
 		SecretReuseCountBuckets:          m.SecretReuseCountBuckets,
+		ProductionSecretsCount:           m.ProductionSecretsCount,
 	}
 
 	return mCounts

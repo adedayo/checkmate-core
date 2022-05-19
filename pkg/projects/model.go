@@ -219,22 +219,22 @@ type RepositoryHistory struct {
 }
 
 type ProjectSummary struct {
-	ID           string       `yaml:"ID"`
-	Name         string       `yaml:"Name"`
-	Workspace    string       `yaml:"Workspace"` //Used to group related projects
-	Repositories []Repository `yaml:"Repositories,omitempty"`
+	ID           string       `yaml:"ID" json:"ID"`
+	Name         string       `yaml:"Name" json:"Name"`
+	Workspace    string       `yaml:"Workspace" json:"Workspace"` //Used to group related projects
+	Repositories []Repository `yaml:"Repositories,omitempty" json:"Repositories,omitempty"`
 	//From RepoLocation -> branch -> RepoHistory
 	ScanAndCommitHistories map[string]map[string]RepositoryHistory `yaml:"ScanAndCommitHistories,omitempty" json:"ScanAndCommitHistories,omitempty"`
-	LastScanID             string                                  `yaml:"LastScanID"`
-	ScanIDs                []string                                `yaml:"ScanIDs"`
-	ScanPolicy             ScanPolicy                              `yaml:"ScanPolicy"`
-	ScoreTrend             map[string]float32                      `yaml:"ScoreTrend,omitempty"` // use this to record arbitrary numeric scores, even time series of trends etc.
-	LastScanSummary        ScanSummary                             `yaml:"LastScanSummary"`
-	LastScore              Score                                   `yaml:"LastScore"`
-	IsBeingScanned         bool                                    `yaml:"IsBeingScanned"`
-	CreationDate           time.Time                               `yaml:"CreationDate"`
-	LastModification       time.Time                               `yaml:"LastModification"`
-	LastScan               time.Time                               `yaml:"LastScan"`
+	LastScanID             string                                  `yaml:"LastScanID" json:"LastScanID"`
+	ScanIDs                []string                                `yaml:"ScanIDs" json:"ScanIDs"`
+	ScanPolicy             ScanPolicy                              `yaml:"ScanPolicy" json:"ScanPolicy"`
+	ScoreTrend             map[string]float32                      `yaml:"ScoreTrend,omitempty" json:"ScoreTrend,omitempty"` // use this to record arbitrary numeric scores, even time series of trends etc.
+	LastScanSummary        ScanSummary                             `yaml:"LastScanSummary" json:"LastScanSummary"`
+	LastScore              Score                                   `yaml:"LastScore" json:"LastScore"`
+	IsBeingScanned         bool                                    `yaml:"IsBeingScanned" json:"IsBeingScanned"`
+	CreationDate           time.Time                               `yaml:"CreationDate" json:"CreationDate"`
+	LastModification       time.Time                               `yaml:"LastModification" json:"LastModification"`
+	LastScan               time.Time                               `yaml:"LastScan" json:"LastScan"`
 }
 
 func (p ProjectSummary) toProject() Project {
@@ -304,6 +304,7 @@ func (ps ProjectSummary) CSVHeaders() []string {
 		`Project Name`,
 		`Grade (A-F)`,
 		`Metric (Score out of 100)`,
+		`Production Secrets Count`,
 		`Critical Issues Count`,
 		`High Issues Count`,
 		`Medium Issues Count`,
@@ -320,31 +321,47 @@ func (ps *ProjectSummary) CSVValues() []string {
 	for _, r := range ps.Repositories {
 		reps = append(reps, r.Location)
 	}
-	return []string{
+
+	csvs := []string{
 		ps.Name,
 		ps.LastScanSummary.Score.Grade,
 		roundDown(ps.LastScanSummary.Score.Metric),
-		getSeverity(ps, `criticalCount`),
-		getSeverity(ps, `highCount`),
-		getSeverity(ps, `mediumCount`),
-		getSeverity(ps, `lowCount`),
-		getSeverity(ps, `informationalCount`),
-		ps.Workspace,
+	}
+	csvs = append(csvs, severityCounts(ps)...)
+	// getSeverity(ps, `criticalCount`),
+	// getSeverity(ps, `highCount`),
+	// getSeverity(ps, `mediumCount`),
+	// getSeverity(ps, `lowCount`),
+	// getSeverity(ps, `informationalCount`),
+	csvs = append(csvs, []string{ps.Workspace,
 		strings.Join(reps, "; "),
 		ps.ID,
-	}
-
+	}...)
+	return csvs
 }
 
-func getSeverity(ps *ProjectSummary, criticality string) string {
-	if info, ok := ps.LastScanSummary.AdditionalInfo.(map[string]interface{}); ok {
-		if val, ok2 := info[criticality].(int); ok2 {
-			return fmt.Sprintf("%d", val)
-		}
+func severityCounts(ps *ProjectSummary) []string {
+	if ps.LastScanSummary.AdditionalInfo == nil {
+		return []string{"-", "-", "-", "-", "-", "-"}
 	}
-	return ""
-
+	return []string{
+		fmt.Sprintf("%d", ps.LastScanSummary.AdditionalInfo.ProductionSecretsCount),
+		fmt.Sprintf("%d", ps.LastScanSummary.AdditionalInfo.CriticalCount),
+		fmt.Sprintf("%d", ps.LastScanSummary.AdditionalInfo.HighCount),
+		fmt.Sprintf("%d", ps.LastScanSummary.AdditionalInfo.MediumCount),
+		fmt.Sprintf("%d", ps.LastScanSummary.AdditionalInfo.LowCount),
+		fmt.Sprintf("%d", ps.LastScanSummary.AdditionalInfo.InformationalCount),
+	}
 }
+
+// func getSeverity(ps *ProjectSummary, criticality string) string {
+// 	if info, ok := ps.LastScanSummary.AdditionalInfo.(map[string]interface{}); ok {
+// 		if val, ok2 := info[criticality].(int); ok2 {
+// 			return fmt.Sprintf("%d", val)
+// 		}
+// 	}
+// 	return ""
+// }
 
 func roundDown(num float32) string {
 	return fmt.Sprintf("%d", int64(num))
@@ -368,7 +385,7 @@ func (ps *ProjectSummary) MarshalJSON() ([]byte, error) {
 type ScanSummary struct {
 	Score          Score
 	CommitHash     string
-	AdditionalInfo interface{}
+	AdditionalInfo *Model
 }
 
 type PaginatedIssueSearch struct {

@@ -63,9 +63,9 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 			}
 			workspaceUniqueFiles[w] = files
 			model := GenerateModel(len(files), true, d)
-			model.Summarise()
+			scanSummary := model.Summarise()
 			workspaceSummary.Details[w] = &WorkspaceDetail{
-				Summary:          model.Summarise(),
+				Summary:          scanSummary,
 				ProjectSummaries: ws[w],
 			}
 		}
