@@ -3,6 +3,8 @@ package gitutils
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
+	"log"
 	"os"
 	"path"
 	"strings"
@@ -42,7 +44,12 @@ func NewDBGitConfigManager(checkMateBaseDirectory string) (GitConfigManager, err
 	if err != nil {
 		return cm, err
 	}
+
 	cm.db = db
+	err = cm.initialiseGitConfig()
+	if err != nil {
+		log.Printf("Error initialising git config: %v", err)
+	}
 	gitConfigManager = cm
 	gitConfigManagers[checkMateBaseDirectory] = cm
 
@@ -50,6 +57,29 @@ func NewDBGitConfigManager(checkMateBaseDirectory string) (GitConfigManager, err
 	importGitYAMLData(cm)
 
 	return gitConfigManager, nil
+}
+
+//ensure the git config table is initialised if not already present
+func (cm dbGitConfigManager) initialiseGitConfig() error {
+
+	err := cm.db.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(toKey(cm.gitConfigTable))
+		return err
+	})
+
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return cm.db.Update(func(txn *badger.Txn) error {
+			config := GitServiceConfig{
+				GitServices: make(map[GitServiceType]map[string]*GitService),
+			}
+			data, err := json.Marshal(config)
+			if err != nil {
+				return err
+			}
+			return txn.Set(toKey(cm.gitConfigTable), data)
+		})
+	}
+	return err
 }
 
 func importGitYAMLData(cm *dbGitConfigManager) {
@@ -64,12 +94,17 @@ func importGitYAMLData(cm *dbGitConfigManager) {
 		cm.db.Update(func(txn *badger.Txn) error {
 			return txn.Set(toKey(cm.initTable), []byte{})
 		})
-		yamlConfig := NewGitConfigManager(cm.baseDir)
-		if config, err := yamlConfig.GetConfig(); err == nil {
-			cm.SaveConfig(config)
+
+		//only do this if the YAML config exists
+		if _, err := os.Stat(path.Join(cm.baseDir, "config", GIT_SERVICE_CONFIG_FILE)); !errors.Is(err, fs.ErrNotExist) {
+			yamlConfig := NewGitConfigManager(cm.baseDir)
+			if config, err := yamlConfig.GetConfig(); err == nil {
+				cm.SaveConfig(config)
+			}
+			//return global git config manager to the db one
+			gitConfigManager = cm
 		}
-		//return global git config manager to the db one
-		gitConfigManager = cm
+
 	}
 }
 
