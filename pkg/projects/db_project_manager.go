@@ -366,6 +366,7 @@ func (pm dbProjectManager) ListProjectSummaries() []*ProjectSummary {
 	pSums := []*ProjectSummary{}
 	pm.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
