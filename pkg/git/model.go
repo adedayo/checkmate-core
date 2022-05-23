@@ -29,14 +29,21 @@ type Author struct {
 	Name, Email string
 }
 
+// Authentication parameters
 type GitAuth struct {
 	User, Credential string
 }
 
 type GitCloneOptions struct {
-	BaseDir    string // directory to clone into
-	Auth       *GitAuth
-	CommitHash string //if set checkout the specified commit
+	// Directory to clone into
+	BaseDir string
+	// Authentication detail
+	Auth *GitAuth
+	// Depth limit cloning/fetching to the specified number of commits from the tip of
+	// each remote branch history.
+	Depth int
+	// If set, checkout the specified commit
+	CommitHash string
 }
 
 type RepositoryCloneSpec struct {
