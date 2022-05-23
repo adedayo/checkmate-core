@@ -220,7 +220,8 @@ func getCodeContext(codeBaseDir string, cnt common.CodeContext) (out string) {
 		}
 	} else {
 		//likely a git checkout, try and open it if the codebase is still there
-		z := strings.Split(cnt.Location, ".git/")
+		repository := strings.ToLower(cnt.Location) // we lower-case during clone
+		z := strings.Split(repository, ".git/")
 		if len(z) == 2 {
 			location := path.Join(codeBaseDir, cnt.ProjectID, path.Base(z[0]), z[1])
 			file, err := os.Open(location)
