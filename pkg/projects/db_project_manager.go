@@ -300,11 +300,6 @@ func (pm dbProjectManager) GetScanConfig(projectID string, scanID string) (*Scan
 	return &pol, err
 }
 
-// GetScanLocation implements ProjectManager
-// func (pm dbProjectManager) GetScanLocation(projID string, scanID string) string {
-// 	panic("unimplemented")
-// }
-
 // GetScanResultSummary implements ProjectManager
 func (pm dbProjectManager) GetScanResultSummary(projectID string, scanID string) (ScanSummary, error) {
 	var scanSummary ScanSummary

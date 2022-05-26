@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -147,18 +146,19 @@ func (repo Repository) IsFileSystem() bool {
 func (repo Repository) GetCodeLocation(pm ProjectManager, projectID string) string {
 	if repo.IsGit() {
 
-		repository := strings.ToLower(repo.Location)
-		//git@ is not supported, replace with https://
-		if strings.HasPrefix(repository, "git@") {
-			repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
-		}
+		// repository := strings.ToLower(repo.Location)
+		// //git@ is not supported, replace with https://
+		// if strings.HasPrefix(repository, "git@") {
+		// 	repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
+		// }
+		// dir, err := filepath.Abs(path.Clean(path.Join(pm.GetCodeBaseDir(), projectID, strings.TrimSuffix(path.Base(repository), ".git"))))
 
-		dir, err := filepath.Abs(path.Clean(path.Join(pm.GetCodeBaseDir(), projectID, strings.TrimSuffix(path.Base(repository), ".git"))))
-
+		baseDir := path.Join(pm.GetCodeBaseDir(), projectID)
+		dir, err := gitutils.GetCheckoutLocation(repo.Location, baseDir)
 		if err == nil {
 			return dir
 		}
-		return repository
+		return repo.Location
 	}
 	return repo.Location
 }

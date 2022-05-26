@@ -32,17 +32,17 @@ type SecurityDiagnostic struct {
 	Tags       *[]string `json:"tags,omitempty"` //optionally annotate diagnostic with tags, e.g. "test"
 }
 
-func (sd *SecurityDiagnostic) CSVHeaders() []string {
-	return []string{
+func (sd *SecurityDiagnostic) CSVHeaders(extraHeaders ...string) []string {
+	return append([]string{
 		`Code`, //Source
-		`File`, //Location
-		`Description`,
 		`Severity`,
+		`Description`,
+		`File`,          //Location
 		`File Location`, //Range Start Position
 		`SHA256`,
 		`Tags`,
 		`Detector ID`, // ProviderID
-	}
+	}, extraHeaders...)
 }
 
 func nilAsEmpty(x *string) string {
@@ -62,16 +62,30 @@ func nilArrayAsEmpty(x *[]string) string {
 func (sd *SecurityDiagnostic) CSVValues() []string {
 	rng := adjustRange(sd.Range)
 	loc := fmt.Sprintf(`Line: %d Column: %d`, rng.Start.Line, rng.Start.Character)
-	return []string{
+	return append([]string{
 		nilAsEmpty(sd.Source),
-		nilAsEmpty(sd.Location),
-		sd.Justification.Headline.Description,
 		sd.Justification.Headline.Confidence.String(),
+		sd.Justification.Headline.Description,
+		nilAsEmpty(sd.Location),
 		loc,
 		nilAsEmpty(sd.SHA256),
 		nilArrayAsEmpty(sd.Tags),
 		nilAsEmpty(sd.ProviderID),
+	}, additionalHeaders(sd.Tags)...)
+}
+
+func additionalHeaders(tags *[]string) []string {
+	kv := []string{}
+	if tags != nil {
+		for _, tag := range *tags {
+			if strings.Contains(tag, "=") {
+				v := strings.Split(tag, "=")[1] //take the value
+				kv = append(kv, v)
+			}
+		}
+		return kv
 	}
+	return []string{}
 }
 
 //HasTag cheks whether diagnostic has the specified tag

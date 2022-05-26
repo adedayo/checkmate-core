@@ -16,13 +16,15 @@ import (
 
 //Clone a repository,returning the location on disk where the clone is placed
 func Clone(ctx context.Context, repository string, options *GitCloneOptions) (string, error) {
-	repository = strings.ToLower(repository)
-	//git@ is not supported, replace with https://
-	if strings.HasPrefix(repository, "git@") {
-		repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
-	}
+	// repository = strings.ToLower(repository)
+	// //git@ is not supported, replace with https://
+	// if strings.HasPrefix(repository, "git@") {
+	// 	repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
+	// }
 
-	dir, err := filepath.Abs(path.Clean(path.Join(options.BaseDir, strings.TrimSuffix(path.Base(repository), ".git"))))
+	// dir, err := filepath.Abs(path.Clean(path.Join(options.BaseDir, strings.TrimSuffix(path.Base(repository), ".git"))))
+
+	dir, err := GetCheckoutLocation(repository, options.BaseDir)
 
 	defer func() {
 		if err != nil {
@@ -96,6 +98,20 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		}
 	}
 	return dir, nil
+}
+
+// returns the checkout location on disk for the specified git repository, given a base directory
+// The pattern for base directory is baseDirectory := path.Join(pm.GetCodeBaseDir(), projectID)
+func GetCheckoutLocation(repository, baseDirectory string) (string, error) {
+
+	repository = strings.ToLower(repository)
+	//git@ is not supported, replace with https://
+	if strings.HasPrefix(repository, "git@") {
+		repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
+	}
+
+	return filepath.Abs(path.Clean(path.Join(baseDirectory, strings.TrimSuffix(path.Base(repository), ".git"))))
+
 }
 
 func directoryIsEmpty(dir string) bool {
