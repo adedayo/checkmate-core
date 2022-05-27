@@ -204,10 +204,10 @@ func (spm simpleProjectManager) Close() error {
 }
 
 func (spm simpleProjectManager) GetCodeContext(cnt common.CodeContext) string {
-	return getCodeContext(spm.baseDir, cnt)
+	return GetCodeContext(spm.baseDir, cnt)
 }
 
-func getCodeContext(codeBaseDir string, cnt common.CodeContext) (out string) {
+func GetCodeContext(codeBaseDir string, cnt common.CodeContext) (out string) {
 	if !strings.Contains(cnt.Location, ".git") {
 		//Filesystem location
 		file, err := os.Open(cnt.Location)
@@ -239,7 +239,7 @@ func getCodeContext(codeBaseDir string, cnt common.CodeContext) (out string) {
 	return
 }
 
-func updatePolicy(exclude diagnostics.ExcludeRequirement, pm ProjectManager) (result diagnostics.PolicyUpdateResult) {
+func UpdatePolicy(exclude diagnostics.ExcludeRequirement, pm ProjectManager) (result diagnostics.PolicyUpdateResult) {
 	projectID := exclude.ProjectID
 	issue := exclude.Issue
 	project, err := pm.GetProject(projectID)
@@ -354,7 +354,7 @@ func updatePolicy(exclude diagnostics.ExcludeRequirement, pm ProjectManager) (re
 }
 
 func (spm simpleProjectManager) RemediateIssue(exclude diagnostics.ExcludeRequirement) (result diagnostics.PolicyUpdateResult) {
-	return updatePolicy(exclude, spm)
+	return UpdatePolicy(exclude, spm)
 }
 
 func encode(data string) (out string, err error) {
@@ -459,10 +459,10 @@ func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) (pr *P
 		return
 	}
 
-	return pageIssues(paginated, results), nil
+	return PageIssues(paginated, results), nil
 }
 
-func pageIssues(paginated PaginatedIssueSearch, results []*diagnostics.SecurityDiagnostic) *PagedResult {
+func PageIssues(paginated PaginatedIssueSearch, results []*diagnostics.SecurityDiagnostic) *PagedResult {
 
 	if paginated.PageSize == 0 {
 		return &PagedResult{
@@ -581,12 +581,12 @@ func pageIssues(paginated PaginatedIssueSearch, results []*diagnostics.SecurityD
 }
 
 func (spm simpleProjectManager) CreateProject(projectDescription ProjectDescription) (project *Project, err error) {
-	proj := projectFromDescription(projectDescription)
+	proj := ProjectFromDescription(projectDescription)
 
 	return spm.saveProject(proj, projectStatus{created: true, creationTime: time.Now()})
 }
 
-func projectFromDescription(projectDescription ProjectDescription) Project {
+func ProjectFromDescription(projectDescription ProjectDescription) Project {
 	projectID := util.NewRandomUUID().String()
 	policy := ScanPolicy{
 		ID:     util.NewRandomUUID().String(),
@@ -734,7 +734,7 @@ func (t dataSlice) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
 
-func loadHistoricalScores(projID string, pm ProjectManager) map[string]float32 {
+func LoadHistoricalScores(projID string, pm ProjectManager) map[string]float32 {
 	out := make(map[string]float32)
 	sortedData := make(dataSlice, 0)
 	proj, err := pm.GetProject(projID)
@@ -783,17 +783,17 @@ func (spm simpleProjectManager) loadLastScanSummary(projID string) (summary Scan
 	return
 }
 
-type projectSummarySlice []*ProjectSummary
+type ProjectSummarySlice []*ProjectSummary
 
-func (t projectSummarySlice) Len() int {
+func (t ProjectSummarySlice) Len() int {
 	return len(t)
 }
 
-func (t projectSummarySlice) Less(i, j int) bool {
+func (t ProjectSummarySlice) Less(i, j int) bool {
 	return t[i].LastScan.After(t[j].LastScan)
 }
 
-func (t projectSummarySlice) Swap(i, j int) {
+func (t ProjectSummarySlice) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
 
@@ -808,7 +808,7 @@ func (spm simpleProjectManager) ListProjectSummaries() (summaries []*ProjectSumm
 	for _, wd := range wss.Details {
 		summaries = append(summaries, wd.ProjectSummaries...)
 	}
-	sorted := make(projectSummarySlice, 0)
+	sorted := make(ProjectSummarySlice, 0)
 	sorted = append(sorted, summaries...)
 	sort.Sort(sorted)
 	return sorted
@@ -826,7 +826,7 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	scanIDCallback(scanID)
 	sdc := createDiagnosticConsumer(spm.projectsLocation, projectID, scanID)
 	consumers = append(consumers, sdc)
-	scannedCommits := retrieveCommitsToBeScanned(projectID, spm)
+	scannedCommits := RetrieveCommitsToBeScanned(projectID, spm)
 	scanStartTime := time.Now()
 	//set "being-scanned" flag
 	if summary, err := spm.GetProjectSummary(projectID); err == nil {
@@ -853,8 +853,8 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 }
 
 //retrieve the git commits (HEAD) of the repositories about to be scanned. repoLocation -> scannedCommit
-func retrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]scannedCommit {
-	out := make(map[string]scannedCommit)
+func RetrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]ScannedCommit {
+	out := make(map[string]ScannedCommit)
 	if proj, err := pm.GetProject(projectID); err == nil {
 
 		for _, repo := range proj.Repositories {
@@ -871,7 +871,7 @@ func retrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]
 						if cIter, err := gitRepo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime}); err == nil {
 							cIter.ForEach(func(c *object.Commit) error {
 								hash := c.Hash.String()
-								out[repo.Location] = scannedCommit{
+								out[repo.Location] = ScannedCommit{
 									Repository: repo.Location,
 									Commit: gitutils.Commit{
 										Hash:   hash,
@@ -895,22 +895,17 @@ func retrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]
 	return out
 }
 
-type scannedCommit struct {
-	Repository string
-	Commit     gitutils.Commit
-}
-
 //once the scan completes, store the scan ID, the git commit hash (HEAD) of the scanned repositories as well as the scan completion time
-func (spm simpleProjectManager) updateScanHistory(projectID, scanID string, scanSummary *ScanSummary, scannedCommits map[string]scannedCommit) (*ProjectSummary, error) {
+func (spm simpleProjectManager) updateScanHistory(projectID, scanID string, scanSummary *ScanSummary, scannedCommits map[string]ScannedCommit) (*ProjectSummary, error) {
 	pSum, err := spm.GetProjectSummary(projectID)
 	if err != nil {
 		return pSum, err
 	}
-	updateScanHistoryAtEndOfScan(pSum, scannedCommits, scanID, scanSummary, spm)
+	UpdateScanHistoryAtEndOfScan(pSum, scannedCommits, scanID, scanSummary, spm)
 	return pSum, spm.SaveProjectSummary(pSum)
 }
 
-func updateScanHistoryAtEndOfScan(pSum *ProjectSummary, scannedCommits map[string]scannedCommit, scanID string, scanSummary *ScanSummary, pm ProjectManager) {
+func UpdateScanHistoryAtEndOfScan(pSum *ProjectSummary, scannedCommits map[string]ScannedCommit, scanID string, scanSummary *ScanSummary, pm ProjectManager) {
 
 	//clear "being-scanned" flag
 	pSum.IsBeingScanned = false

@@ -169,6 +169,11 @@ type ScanHistory struct {
 	Commit gitutils.Commit
 }
 
+type ScannedCommit struct {
+	Repository string
+	Commit     gitutils.Commit
+}
+
 type Scan struct {
 	ID         string
 	Score      Score
@@ -237,7 +242,7 @@ type ProjectSummary struct {
 	LastScan               time.Time                               `yaml:"LastScan" json:"LastScan"`
 }
 
-func (p ProjectSummary) toProject() Project {
+func (p ProjectSummary) ToProject() Project {
 	return Project{
 		ID:           p.ID,
 		Name:         p.Name,
