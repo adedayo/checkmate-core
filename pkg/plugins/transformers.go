@@ -5,7 +5,6 @@ import (
 	"net/rpc"
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
-	"github.com/adedayo/checkmate-core/pkg/projects"
 	"github.com/hashicorp/go-plugin"
 )
 
@@ -15,8 +14,9 @@ type DiagnosticTransformer interface {
 }
 
 type PluginInitialiser struct {
-	ProjectManager projects.ProjectManager
-	ProjectID      string
+	// ProjectManager projects.ProjectManager
+	CodeBaseDir string // code base directory
+	ProjectID   string
 }
 
 type TransformerPlugin struct {
