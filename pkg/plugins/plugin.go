@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -40,11 +40,10 @@ func RegisterDiagnosticTransformer(transformer DiagnosticTransformer) (micro Mic
 	if err != nil {
 		return
 	}
-
-	micro.Port = port
-
-	mux := makeHandler(transformer)
 	fmt.Printf("port:%d", port)
+	micro.Port = port
+	mux := makeHandler(transformer)
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf("localhost:%d", port),
 		Handler:      mux,
@@ -52,11 +51,9 @@ func RegisterDiagnosticTransformer(transformer DiagnosticTransformer) (micro Mic
 		ReadTimeout:  1 * time.Second,
 		WriteTimeout: 1 * time.Second,
 	}
-
 	micro.HTTPServer = server
 
 	return
-
 }
 
 func makeHandler(t DiagnosticTransformer) *http.ServeMux {
@@ -73,14 +70,23 @@ type diagnosticTransformHandler struct {
 }
 
 func (dth diagnosticTransformHandler) transfromDiagnostics(w http.ResponseWriter, r *http.Request) {
-	var confD ConfigDiagnostics
-	err := json.NewDecoder(r.Body).Decode(&confD)
-	if err != nil {
-		log.Printf("Error decoding diagnostics during transform")
+
+	switch r.Method {
+	case http.MethodPost:
+		var confD ConfigDiagnostics
+		err := json.NewDecoder(r.Body).Decode(&confD)
+		if err != nil {
+			log.Printf("Error decoding diagnostics during transform")
+		}
+		defer r.Body.Close()
+		d := dth.transformer.Transform(confD.Config, confD.Diagnostics...)
+		json.NewEncoder(w).Encode(d)
+
+	default:
+		http.Error(w, errors.New("Only POST method is supported, but got "+r.Method).Error(), http.StatusBadRequest)
+		return
 	}
-	defer r.Body.Close()
-	d := dth.transformer.Transform(confD.Config, confD.Diagnostics...)
-	json.NewEncoder(w).Encode(d)
+
 }
 
 type MicroService struct {
@@ -105,8 +111,7 @@ func (m *MicroService) Start() {
 }
 
 type pluginRunner struct {
-	path string
-	// port         int
+	path         string
 	transformURL string
 }
 
@@ -121,7 +126,7 @@ func (p pluginRunner) Transform(config *Config, diags ...*diagnostics.SecurityDi
 		return diags //noop
 	}
 
-	resp, err := http.Post(p.transformURL, "application/json; charset=utf-8", bytes.NewBuffer(data))
+	resp, err := http.Post(p.transformURL, "application/json", bytes.NewBuffer(data))
 
 	if err != nil {
 		log.Printf("Error invoking microservice transform endpoint: %v", err)
@@ -141,17 +146,25 @@ func (p pluginRunner) Transform(config *Config, diags ...*diagnostics.SecurityDi
 	return out
 }
 
+// creates and runs a new diagnostic transformer plugin
 func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformer, error) {
 	runner := pluginRunner{
 		path: path,
 	}
 
 	cmd := exec.Command(path)
-	data, err := io.ReadAll(cmd.Stdin)
+
+	stdout := bytes.Buffer{}
+	cmd.Stdout = &stdout
+
+	err := cmd.Start()
 	if err != nil {
 		return runner, err
 	}
-	output := string(data)
+
+	time.Sleep(3 * time.Second) //sleep to allow output from plugin
+
+	output := stdout.String()
 	p := strings.Split(output, ":")
 	if len(p) != 2 {
 		return runner, fmt.Errorf("Expecting output 'port:<number>' but got '%s'", output)
@@ -161,8 +174,6 @@ func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformer, error) 
 	if err != nil {
 		return runner, fmt.Errorf("Expecting port as a number but got '%s'", p[1])
 	}
-	// runner.port = port
-	runner.transformURL = fmt.Sprintf("localhost:%d/transform", port)
-
+	runner.transformURL = fmt.Sprintf("http://localhost:%d/transform", port)
 	return runner, nil
 }
