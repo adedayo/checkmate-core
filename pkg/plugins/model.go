@@ -8,6 +8,11 @@ type DiagnosticTransformer interface {
 	Transform(*Config, ...*diagnostics.SecurityDiagnostic) []*diagnostics.SecurityDiagnostic
 }
 
+type DiagnosticTransformerPlugin interface {
+	DiagnosticTransformer
+	ShutDown() error
+}
+
 type Config struct {
 	CodeBaseDir string // code base directory
 	ProjectID   string

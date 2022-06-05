@@ -95,7 +95,8 @@ type MicroService struct {
 	ch         chan os.Signal
 }
 
-func (m MicroService) ShutDown() {
+//shut down server and service
+func (m *MicroService) ShutDown() {
 	m.HTTPServer.Shutdown(context.Background())
 }
 
@@ -113,6 +114,11 @@ func (m *MicroService) Start() {
 type pluginRunner struct {
 	path         string
 	transformURL string
+	cmd          *exec.Cmd
+}
+
+func (p pluginRunner) ShutDown() error {
+	return p.cmd.Process.Signal(os.Interrupt)
 }
 
 // Transform implements DiagnosticTransformer
@@ -147,13 +153,13 @@ func (p pluginRunner) Transform(config *Config, diags ...*diagnostics.SecurityDi
 }
 
 // creates and runs a new diagnostic transformer plugin
-func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformer, error) {
+func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformerPlugin, error) {
 	runner := pluginRunner{
 		path: path,
 	}
 
 	cmd := exec.Command(path)
-
+	runner.cmd = cmd
 	stdout := bytes.Buffer{}
 	cmd.Stdout = &stdout
 
