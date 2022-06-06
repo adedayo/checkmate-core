@@ -61,8 +61,15 @@ func makeHandler(t DiagnosticTransformer) *http.ServeMux {
 	dth := diagnosticTransformHandler{
 		transformer: t,
 	}
-	mux.HandleFunc("/transform", dth.transfromDiagnostics)
+	mux.HandleFunc("/transform", cors(dth.transfromDiagnostics))
 	return mux
+}
+
+func cors(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*") //OK, since we are bound to localhost
+		next(w, r)
+	})
 }
 
 type diagnosticTransformHandler struct {
