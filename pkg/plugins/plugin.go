@@ -1,11 +1,13 @@
 package plugins
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -40,7 +42,8 @@ func RegisterDiagnosticTransformer(transformer DiagnosticTransformer) (micro Mic
 	if err != nil {
 		return
 	}
-	fmt.Printf("port:%d", port)
+	fmt.Printf("port:%d\n", port)
+	os.Stdout.Sync()
 	micro.Port = port
 	mux := makeHandler(transformer)
 
@@ -160,33 +163,54 @@ func (p pluginRunner) Transform(config *Config, diags ...*diagnostics.SecurityDi
 }
 
 // creates and runs a new diagnostic transformer plugin
-func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformerPlugin, error) {
+func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformerPlugin, io.Reader, error) {
 	runner := pluginRunner{
 		path: path,
 	}
 
 	cmd := exec.Command(path)
 	runner.cmd = cmd
-	stdout := bytes.Buffer{}
-	cmd.Stdout = &stdout
 
-	err := cmd.Start()
+	pr, pw := io.Pipe()
+
+	outPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return runner, err
+		return runner, pr, err
 	}
 
-	time.Sleep(3 * time.Second) //sleep to allow output from plugin
+	scanner := bufio.NewScanner(outPipe)
 
-	output := stdout.String()
-	p := strings.Split(output, ":")
-	if len(p) != 2 {
-		return runner, fmt.Errorf("Expecting output 'port:<number>' but got '%s'", output)
-	}
-
-	port, err := strconv.Atoi(strings.TrimSpace(p[1]))
+	err = cmd.Start()
 	if err != nil {
-		return runner, fmt.Errorf("Expecting port as a number but got '%s'", p[1])
+		return runner, pr, err
 	}
-	runner.transformURL = fmt.Sprintf("http://localhost:%d/transform", port)
-	return runner, nil
+
+	defer cmd.Wait()
+
+	//read the first port:<number> output
+	if scanner.Scan() {
+		output := scanner.Text()
+		p := strings.Split(output, ":")
+		if len(p) != 2 {
+			return runner, pr, fmt.Errorf("Expecting output 'port:<number>' but got '%s'", output)
+		}
+
+		port, err := strconv.Atoi(strings.TrimSpace(p[1]))
+		if err != nil {
+			return runner, pr, fmt.Errorf("Expecting port as a number but got '%s'", p[1])
+		}
+		runner.transformURL = fmt.Sprintf("http://localhost:%d/transform", port)
+		pw.Write([]byte(output))
+	}
+
+	//stream rte rest of the result
+	go func() {
+		for scanner.Scan() {
+			pw.Write(scanner.Bytes())
+			fmt.Printf("\t > %s\n", scanner.Text())
+		}
+	}()
+
+	return runner, pr, nil
+
 }
