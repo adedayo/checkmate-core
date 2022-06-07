@@ -185,7 +185,9 @@ func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformerPlugin, i
 		return runner, pr, err
 	}
 
-	defer cmd.Wait()
+	go func() {
+		cmd.Wait()
+	}()
 
 	//read the first port:<number> output
 	if scanner.Scan() {
@@ -200,14 +202,12 @@ func NewDiagnosticTransformerPlugin(path string) (DiagnosticTransformerPlugin, i
 			return runner, pr, fmt.Errorf("Expecting port as a number but got '%s'", p[1])
 		}
 		runner.transformURL = fmt.Sprintf("http://localhost:%d/transform", port)
-		pw.Write([]byte(output))
 	}
 
-	//stream rte rest of the result
+	//stream the rest of the result
 	go func() {
 		for scanner.Scan() {
 			pw.Write(scanner.Bytes())
-			fmt.Printf("\t > %s\n", scanner.Text())
 		}
 	}()
 
