@@ -19,6 +19,6 @@ type Config struct {
 }
 
 type ConfigDiagnostics struct {
-	Config      *Config
-	Diagnostics []*diagnostics.SecurityDiagnostic
+	Config      *Config                           `json:"Config,omitempty"`
+	Diagnostics []*diagnostics.SecurityDiagnostic `json:"Diagnostics,omitempty"`
 }
