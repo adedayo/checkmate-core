@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/adedayo/checkmate-core/pkg/code"
@@ -45,6 +46,27 @@ func (sd *SecurityDiagnostic) CSVHeaders(extraHeaders ...string) []string {
 	}, extraHeaders...)
 }
 
+//Derives additional headers from Tags, sorted in alphabetic order
+func GetExtraHeaders(diags []*SecurityDiagnostic) []string {
+	headers := make(map[string]bool)
+	for _, sd := range diags {
+		if sd.Tags != nil {
+			for _, tag := range *sd.Tags {
+				if strings.Contains(tag, "=") {
+					h := strings.Split(tag, "=")[0] //take the key
+					headers[h] = true
+				}
+			}
+		}
+	}
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func nilAsEmpty(x *string) string {
 	if x == nil {
 		return ""
@@ -59,7 +81,7 @@ func nilArrayAsEmpty(x *[]string) string {
 	return strings.Join(*x, " ")
 }
 
-func (sd *SecurityDiagnostic) CSVValues() []string {
+func (sd *SecurityDiagnostic) CSVValues(extraHeaders ...string) []string {
 	rng := adjustRange(sd.Range)
 	loc := fmt.Sprintf(`Line: %d Column: %d`, rng.Start.Line, rng.Start.Character)
 	return append([]string{
@@ -71,16 +93,24 @@ func (sd *SecurityDiagnostic) CSVValues() []string {
 		nilAsEmpty(sd.SHA256),
 		nilArrayAsEmpty(sd.Tags),
 		nilAsEmpty(sd.ProviderID),
-	}, additionalHeaders(sd.Tags)...)
+	}, additionalValues(sd.Tags)...)
 }
 
-func additionalHeaders(tags *[]string) []string {
-	kv := []string{}
+func additionalValues(tags *[]string, extraHeaders ...string) []string {
+	index := map[string]int{}
+	for i, v := range extraHeaders {
+		index[v] = i
+	}
+	kv := make([]string, len(extraHeaders))
 	if tags != nil {
 		for _, tag := range *tags {
 			if strings.Contains(tag, "=") {
-				v := strings.Split(tag, "=")[1] //take the value
-				kv = append(kv, v)
+				vv := strings.Split(tag, "=")
+				k := vv[0]
+				v := vv[1]
+				if i, exists := index[k]; exists {
+					kv[i] = v
+				}
 			}
 		}
 		return kv
