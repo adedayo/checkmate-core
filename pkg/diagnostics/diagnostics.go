@@ -93,7 +93,7 @@ func (sd *SecurityDiagnostic) CSVValues(extraHeaders ...string) []string {
 		nilAsEmpty(sd.SHA256),
 		nilArrayAsEmpty(sd.Tags),
 		nilAsEmpty(sd.ProviderID),
-	}, additionalValues(sd.Tags)...)
+	}, additionalValues(sd.Tags, extraHeaders...)...)
 }
 
 func additionalValues(tags *[]string, extraHeaders ...string) []string {
