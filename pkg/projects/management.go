@@ -893,8 +893,32 @@ func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, pro
 								}
 								return errors.New("") // just take the HEAD and don't proceed further
 							})
+						} else {
+							progressMonitor(diagnostics.Progress{
+								ProjectID:   projectID,
+								ScanID:      scanID,
+								Position:    int64(i),
+								Total:       repoCount,
+								CurrentFile: fmt.Sprintf("analysing branches of repository %s. Error %v", repo.Location, err),
+							})
 						}
+					} else {
+						progressMonitor(diagnostics.Progress{
+							ProjectID:   projectID,
+							ScanID:      scanID,
+							Position:    int64(i),
+							Total:       repoCount,
+							CurrentFile: fmt.Sprintf("analysing branches of repository %s. Error %v", repo.Location, err),
+						})
 					}
+				} else {
+					progressMonitor(diagnostics.Progress{
+						ProjectID:   projectID,
+						ScanID:      scanID,
+						Position:    int64(i),
+						Total:       repoCount,
+						CurrentFile: fmt.Sprintf("analysing branches of repository %s. Error %v", repo.Location, err),
+					})
 				}
 			}
 		}

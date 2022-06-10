@@ -2,6 +2,7 @@ package gitutils
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -96,30 +97,28 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 // returns the checkout location on disk for the specified git repository, given a base directory
 // The pattern for base directory is baseDirectory := path.Join(pm.GetCodeBaseDir(), projectID)
 func GetCheckoutLocation(repository, baseDirectory string) (string, error) {
-
-	repository = strings.ToLower(repository)
-	//git@ is not supported, replace with https://
-	if strings.HasPrefix(repository, "git@") {
-		repository = strings.Replace(strings.Replace(repository, ":", "/", 1), "git@", "https://", 1)
-	}
-
+	repository = normaliseRepository(repository)
 	return filepath.Abs(path.Clean(path.Join(baseDirectory, strings.TrimSuffix(path.Base(repository), ".git"))))
-
 }
 
-// returns the checkout location on disk for the specified file, given a base directory
-// The pattern for base directory is baseDirectory := path.Join(pm.GetCodeBaseDir(), projectID)
-func GetRepositoryLocation(file, baseDirectory string) (string, error) {
-
-	file = strings.ToLower(file)
+//replaces git@ with https:// in repository URL
+func normaliseRepository(repository string) string {
 	//git@ is not supported, replace with https://
-	if strings.HasPrefix(file, "git@") {
-		file = strings.Replace(strings.Replace(file, ":", "/", 1), "git@", "https://", 1)
+	if strings.HasPrefix(strings.ToLower(repository), "git@") {
+		repository = strings.Replace(repository, ":", "/", 1) //replace the : in e.g. git@github.com:adedayo/checkmate.git with a /
+		repository = repository[4:]                           //cut out git@
+		repository = fmt.Sprintf("https://%s", repository)
 	}
-
-	return filepath.Abs(path.Clean(path.Join(baseDirectory, path.Base(strings.Split(file, ".git")[0]))))
-
+	return repository
 }
+
+// // returns the checkout location on disk for the specified file, given a base directory
+// // The pattern for base directory is baseDirectory := path.Join(pm.GetCodeBaseDir(), projectID)
+// func GetRepositoryLocation(repository, baseDirectory string) (string, error) {
+// 	repository = normaliseRepository(repository)
+// 	return filepath.Abs(path.Clean(path.Join(baseDirectory, path.Base(strings.Split(repository, ".git")[0]))))
+
+// }
 
 func directoryIsEmpty(dir string) bool {
 
