@@ -826,7 +826,7 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	scanIDCallback(scanID)
 	sdc := createDiagnosticConsumer(spm.projectsLocation, projectID, scanID)
 	consumers = append(consumers, sdc)
-	scannedCommits := RetrieveCommitsToBeScanned(projectID, spm)
+	scannedCommits := RetrieveCommitsToBeScanned(projectID, scanID, spm, progressMonitor)
 	scanStartTime := time.Now()
 	//set "being-scanned" flag
 	if summary, err := spm.GetProjectSummary(projectID); err == nil {
@@ -853,12 +853,19 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 }
 
 //retrieve the git commits (HEAD) of the repositories about to be scanned. repoLocation -> scannedCommit
-func RetrieveCommitsToBeScanned(projectID string, pm ProjectManager) map[string]ScannedCommit {
+func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, progressMonitor func(diagnostics.Progress)) map[string]ScannedCommit {
 	out := make(map[string]ScannedCommit)
 	if proj, err := pm.GetProject(projectID); err == nil {
-
-		for _, repo := range proj.Repositories {
+		repoCount := int64(len(proj.Repositories))
+		for i, repo := range proj.Repositories {
 			if repo.LocationType == "git" {
+				progressMonitor(diagnostics.Progress{
+					ProjectID:   projectID,
+					ScanID:      scanID,
+					Position:    int64(i),
+					Total:       repoCount,
+					CurrentFile: fmt.Sprintf("analysing branches of repository %s", repo.Location),
+				})
 				if dir, err := filepath.Abs(path.Clean(path.Join(pm.GetCodeBaseDir(), projectID,
 					strings.TrimSuffix(path.Base(repo.Location), ".git")))); err == nil {
 					if gitRepo, err := git.PlainOpen(dir); err == nil {
