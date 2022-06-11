@@ -46,6 +46,7 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 
 	if directoryIsEmpty(dir) {
 
+		log.Printf("cloning %s", dir)
 		repo, err = git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
 			URL: repository,
 			// Progress: os.Stdout,
@@ -54,7 +55,7 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
 			NoCheckout:      options.CommitHash != "",
 		})
-
+		log.Printf("Finished cloning %s, err: %v", dir, err)
 		if err != nil {
 			return "", err
 		}
@@ -66,11 +67,15 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 			return "", err
 		}
 
+		log.Printf("Fetching %s", dir)
 		err = repo.FetchContext(ctx, &git.FetchOptions{
 			Auth:            auth,
 			Depth:           options.Depth,
 			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
+			Force:           true,
 		})
+
+		log.Printf("Finished Fetching %s, err: %v", dir, err)
 
 		if err != nil && err != git.NoErrAlreadyUpToDate {
 			return "", err
@@ -80,13 +85,21 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 	}
 
 	if options.CommitHash != "" {
+		log.Printf("commithash %s, %s", dir, options.CommitHash)
+
 		w, err := repo.Worktree()
 		if err != nil {
 			return "", err
 		}
+
+		log.Printf("Worktree %s", dir)
+
 		err = w.Checkout(&git.CheckoutOptions{
 			Hash: plumbing.NewHash(options.CommitHash),
 		})
+
+		log.Printf("Checkout %s", dir)
+
 		if err != nil {
 			return "", err
 		}
