@@ -833,6 +833,13 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 		summary.IsBeingScanned = true
 		spm.SaveProjectSummary(summary)
 	}
+	progressMonitor(diagnostics.Progress{
+		ProjectID:   projectID,
+		ScanID:      scanID,
+		Position:    0,
+		Total:       1,
+		CurrentFile: fmt.Sprintf("starting scan ..."),
+	})
 	scanner.Scan(ctx, projectID, scanID, spm, progressMonitor, consumers...)
 	scanEndTime := time.Now()
 	sdc.close(scanStartTime, scanEndTime)
@@ -938,6 +945,15 @@ func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, pro
 			}
 		}
 	}
+
+	progressMonitor(diagnostics.Progress{
+		ProjectID:   projectID,
+		ScanID:      scanID,
+		Position:    1,
+		Total:       1,
+		CurrentFile: fmt.Sprintf("finished analysing repositories"),
+	})
+
 	return out
 }
 
