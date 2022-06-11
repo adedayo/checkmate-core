@@ -873,6 +873,14 @@ func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, pro
 						if h, err := gitRepo.Head(); err == nil {
 							head = h.Hash().String()
 							headBranch = h.Name().Short()
+						} else {
+							progressMonitor(diagnostics.Progress{
+								ProjectID:   projectID,
+								ScanID:      scanID,
+								Position:    int64(i),
+								Total:       repoCount,
+								CurrentFile: fmt.Sprintf("analysing branches of repository %s. Head discovery error: %v", repo.Location, err),
+							})
 						}
 
 						if cIter, err := gitRepo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime}); err == nil {
