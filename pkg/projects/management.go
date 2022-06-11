@@ -878,6 +878,13 @@ func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, pro
 						if cIter, err := gitRepo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime}); err == nil {
 							cIter.ForEach(func(c *object.Commit) error {
 								hash := c.Hash.String()
+								progressMonitor(diagnostics.Progress{
+									ProjectID:   projectID,
+									ScanID:      scanID,
+									Position:    int64(i),
+									Total:       repoCount,
+									CurrentFile: fmt.Sprintf("analysing branches of repository %s. Hash %s", repo.Location, hash),
+								})
 								out[repo.Location] = ScannedCommit{
 									Repository: repo.Location,
 									Commit: gitutils.Commit{
