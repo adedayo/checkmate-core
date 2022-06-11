@@ -18,7 +18,7 @@ var (
 )
 
 //FindFiles recursively searches the directories and files contained in paths and returns a unique list of files
-func FindFiles(paths []string) (result []string) {
+func FindFiles(paths []string) []string {
 
 	directoryOrFile := make(map[string]bool)
 	worklist := make(map[string]struct{})
@@ -41,12 +41,14 @@ func FindFiles(paths []string) (result []string) {
 		}
 	}
 
+	result := make([]string, 0, len(worklist))
 	for path := range worklist {
 		result = append(result, path)
 	}
 
-	return
+	return result
 }
+
 func getFiles(dir string) (paths []string) {
 	filepath.WalkDir(dir, func(path string, info os.DirEntry, err error) error {
 		if err != nil {

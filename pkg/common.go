@@ -42,8 +42,11 @@ func excludeName(basname string) bool {
 }
 
 //GetSensitiveFilesDescriptors gets all registered sensitive file descriptions
-func GetSensitiveFilesDescriptors() (files []SensitiveFile) {
+func GetSensitiveFilesDescriptors() []SensitiveFile {
 
+	length := len(DangerousExtensions) + len(CertsAndKeyStores) + len(DangerousExtensions) +
+		len(FinancialAndAccountingExtensions) + 2 //excluded 2 types
+	files := make([]SensitiveFile, 0, length)
 	for file, description := range DangerousFileNames {
 		files = append(files, SensitiveFile{
 			Extension:   file,
@@ -84,7 +87,7 @@ func GetSensitiveFilesDescriptors() (files []SensitiveFile) {
 		Excluded:    true,
 	})
 
-	return
+	return files
 }
 
 //SensitiveFile is a description of a potentially sensitive file based on its name or extension

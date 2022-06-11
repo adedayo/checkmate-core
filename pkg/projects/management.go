@@ -387,18 +387,19 @@ func fixPathRegex(rx string) string {
 	return rx
 }
 
-func appendUnique(xs []string, x string) (out []string) {
+func appendUnique(xs []string, x string) []string {
 	m := make(map[string]struct{})
 	nothing := struct{}{}
 	m[x] = nothing
 	for _, y := range xs {
 		m[y] = nothing
 	}
+	out := make([]string, 0, len(m))
 	for z := range m {
 		out = append(out, z)
 	}
 	out = sort.StringSlice(out)
-	return
+	return out
 }
 
 func (spm simpleProjectManager) GetWorkspaces() (*Workspace, error) {

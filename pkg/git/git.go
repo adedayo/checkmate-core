@@ -27,11 +27,11 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 	}()
 
 	if err != nil {
-		return "", err
+		return dir, err
 	}
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		return "", err
+		return dir, err
 	}
 
 	var repo *git.Repository
@@ -57,14 +57,14 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		})
 		log.Printf("Finished cloning %s, err: %v", dir, err)
 		if err != nil {
-			return "", err
+			return dir, err
 		}
 	} else {
 		//the directory already exists, so, simply fetch if possible
 		repo, err = git.PlainOpen(dir)
 
 		if err != nil {
-			return "", err
+			return dir, err
 		}
 
 		log.Printf("Fetching %s", dir)
@@ -78,30 +78,24 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		log.Printf("Finished Fetching %s, err: %v", dir, err)
 
 		if err != nil && err != git.NoErrAlreadyUpToDate {
-			return "", err
+			return dir, err
 		}
 
 		err = nil
 	}
 
 	if options.CommitHash != "" {
-		log.Printf("commithash %s, %s", dir, options.CommitHash)
-
 		w, err := repo.Worktree()
 		if err != nil {
-			return "", err
+			return dir, err
 		}
-
-		log.Printf("Worktree %s", dir)
 
 		err = w.Checkout(&git.CheckoutOptions{
 			Hash: plumbing.NewHash(options.CommitHash),
 		})
 
-		log.Printf("Checkout %s", dir)
-
 		if err != nil {
-			return "", err
+			return dir, err
 		}
 	}
 	return dir, nil
