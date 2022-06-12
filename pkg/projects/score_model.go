@@ -450,3 +450,44 @@ func capScore(score, cap float32) float32 {
 	}
 	return score
 }
+
+func MergeModels(timestamp string, models ...*Model) *Model {
+	out := &Model{
+		Issues:        make([]*diagnostics.SecurityDiagnostic, 0),         //not used
+		ReusedSecrets: make(map[string][]*diagnostics.SecurityDiagnostic), //not used
+		ShowSource:    true,
+		TimeStamp:     timestamp,
+	}
+
+	for _, m := range models {
+		out.CriticalCount += m.CriticalCount
+		out.HighCount += m.HighCount
+		out.MediumCount += m.MediumCount
+		out.LowCount += m.LowCount
+		out.InformationalCount += m.InformationalCount
+		out.ProductionConfidentialFilesCount += m.ProductionConfidentialFilesCount
+		out.FileCount += m.FileCount
+		out.SkippedCount += m.SkippedCount
+		out.IssuesPerType += m.IssuesPerType
+		out.AveragePerFile += m.AveragePerFile //revisit
+		out.ShowSource = out.ShowSource && m.ShowSource
+		out.ReusedSecretsCount += m.ReusedSecretsCount
+		out.NumberOfSecretsReuse += m.NumberOfSecretsReuse
+		out.ProdAndNonProdSecretReuse = append(out.ProdAndNonProdSecretReuse, m.ProdAndNonProdSecretReuse...)
+		out.ProductionSecretsCount += m.ProductionSecretsCount
+		out.CriticalProdUsedInNonProdCount += m.CriticalProdUsedInNonProdCount
+		out.HighProdUsedInNonProdCount += m.HighProdUsedInNonProdCount
+		out.MediumProdUsedInNonProdCount += m.MediumProdUsedInNonProdCount
+		out.LowProdUsedInNonProdCount += m.LowProdUsedInNonProdCount
+		out.InfoProdUsedInNonProdCount += m.InfoProdUsedInNonProdCount
+		out.CriticalSensitiveFileCount += m.CriticalSensitiveFileCount
+		out.HighSensitiveFileCount += m.HighSensitiveFileCount
+		out.MediumSensitiveFileCount += m.MediumSensitiveFileCount
+		out.LowSensitiveFileCount += m.LowSensitiveFileCount
+		out.InfoSensitiveFileCount += m.InfoSensitiveFileCount
+		out.NonProdSensitiveFileCount += m.NonProdSensitiveFileCount
+		out.SecretReuseCountBuckets = append(out.SecretReuseCountBuckets, m.SecretReuseCountBuckets...)
+	}
+
+	return out
+}

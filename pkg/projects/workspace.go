@@ -2,8 +2,7 @@ package projects
 
 import (
 	"log"
-
-	"github.com/adedayo/checkmate-core/pkg/diagnostics"
+	"time"
 )
 
 var (
@@ -35,45 +34,60 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 			}
 		}
 
-		ds := make(map[string][]*diagnostics.SecurityDiagnostic)
+		// ds := make(map[string][]*diagnostics.SecurityDiagnostic)
 
-		for w, pps := range ws {
-			for _, ps := range pps {
-				if results, err := pm.GetScanResults(ps.ID, ps.LastScanID); err == nil {
-					if sds, present := ds[w]; present {
-						ds[w] = append(sds, results...)
-					} else {
-						ds[w] = results
-					}
-				}
-			}
-		}
+		// for w, pps := range ws {
+		// 	for _, ps := range pps {
+		// 		if results, err := pm.GetScanResults(ps.ID, ps.LastScanID); err == nil {
+		// 			if sds, present := ds[w]; present {
+		// 				ds[w] = append(sds, results...)
+		// 			} else {
+		// 				ds[w] = results
+		// 			}
+		// 		}
+		// 	}
+		// }
 
-		workspaceUniqueFiles := make(map[string]map[string]struct{})
+		// workspaceUniqueFiles := make(map[string]map[string]struct{})
+
+		// for w, d := range ds {
+		// 	files := make(map[string]struct{})
+		// 	for _, diag := range d {
+		// 		if diag.Location != nil {
+		// 			files[*diag.Location] = nothing
+		// 		}
+		// 	}
+		// 	workspaceUniqueFiles[w] = files
+		// 	model := GenerateModel(len(files), true, d)
+		// 	scanSummary := model.Summarise()
+		// 	workspaceSummary.Details[w] = &WorkspaceDetail{
+		// 		Summary:          scanSummary,
+		// 		ProjectSummaries: ws[w],
+		// 	}
+		// }
 
 		workspaceSummary := Workspace{
 			Details: make(map[string]*WorkspaceDetail),
 		}
-		for w, d := range ds {
-			files := make(map[string]struct{})
-			for _, diag := range d {
-				if diag.Location != nil {
-					files[*diag.Location] = nothing
-				}
+
+		tStamp := time.Now().UTC().Format(time.RFC1123)
+		for w, pss := range ws {
+			psModels := make([]*Model, len(pss))
+			for _, ps := range pss {
+				psModels = append(psModels, ps.LastScanSummary.AdditionalInfo)
 			}
-			workspaceUniqueFiles[w] = files
-			model := GenerateModel(len(files), true, d)
-			scanSummary := model.Summarise()
 			workspaceSummary.Details[w] = &WorkspaceDetail{
-				Summary:          scanSummary,
+				Summary:          MergeModels(tStamp, psModels...).Summarise(),
 				ProjectSummaries: ws[w],
 			}
 		}
 
+		if wspaces.Details == nil {
+			wspaces.Details = make(map[string]*WorkspaceDetail)
+		}
+
+		//update the newly-calculated workspace summary details
 		for w, wd := range workspaceSummary.Details {
-			if wspaces.Details == nil {
-				wspaces.Details = make(map[string]*WorkspaceDetail)
-			}
 			wspaces.Details[w] = wd
 		}
 	}
