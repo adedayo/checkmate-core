@@ -453,10 +453,11 @@ func capScore(score, cap float32) float32 {
 
 func MergeModels(timestamp string, models ...*Model) *Model {
 	out := &Model{
-		Issues:        make([]*diagnostics.SecurityDiagnostic, 0),         //not used
-		ReusedSecrets: make(map[string][]*diagnostics.SecurityDiagnostic), //not used
-		ShowSource:    true,
-		TimeStamp:     timestamp,
+		Issues:                    make([]*diagnostics.SecurityDiagnostic, 0),         //not used
+		ReusedSecrets:             make(map[string][]*diagnostics.SecurityDiagnostic), //not used
+		ProdAndNonProdSecretReuse: []ReusedSecret{},
+		ShowSource:                true,
+		TimeStamp:                 timestamp,
 	}
 
 	for _, m := range models {
@@ -470,11 +471,11 @@ func MergeModels(timestamp string, models ...*Model) *Model {
 			out.FileCount += m.FileCount
 			out.SkippedCount += m.SkippedCount
 			out.IssuesPerType += m.IssuesPerType
-			out.AveragePerFile += m.AveragePerFile //revisit
+			out.AveragePerFile += m.AveragePerFile * float32(m.FileCount)
 			out.ShowSource = out.ShowSource && m.ShowSource
 			out.ReusedSecretsCount += m.ReusedSecretsCount
 			out.NumberOfSecretsReuse += m.NumberOfSecretsReuse
-			out.ProdAndNonProdSecretReuse = append(out.ProdAndNonProdSecretReuse, m.ProdAndNonProdSecretReuse...)
+			// out.ProdAndNonProdSecretReuse = append(out.ProdAndNonProdSecretReuse, m.ProdAndNonProdSecretReuse...)
 			out.ProductionSecretsCount += m.ProductionSecretsCount
 			out.CriticalProdUsedInNonProdCount += m.CriticalProdUsedInNonProdCount
 			out.HighProdUsedInNonProdCount += m.HighProdUsedInNonProdCount
@@ -489,6 +490,10 @@ func MergeModels(timestamp string, models ...*Model) *Model {
 			out.NonProdSensitiveFileCount += m.NonProdSensitiveFileCount
 			out.SecretReuseCountBuckets = append(out.SecretReuseCountBuckets, m.SecretReuseCountBuckets...)
 		}
+	}
+
+	if out.FileCount != 0 {
+		out.AveragePerFile = out.AveragePerFile / float32(out.FileCount)
 	}
 
 	return out

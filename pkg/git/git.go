@@ -46,7 +46,6 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 
 	if directoryIsEmpty(dir) {
 
-		log.Printf("cloning %s", dir)
 		repo, err = git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
 			URL: repository,
 			// Progress: os.Stdout,
@@ -55,7 +54,6 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
 			NoCheckout:      options.CommitHash != "",
 		})
-		log.Printf("Finished cloning %s, err: %v", dir, err)
 		if err != nil {
 			return dir, err
 		}
@@ -67,15 +65,12 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 			return dir, err
 		}
 
-		log.Printf("Fetching %s", dir)
 		err = repo.FetchContext(ctx, &git.FetchOptions{
 			Auth:            auth,
 			Depth:           options.Depth,
 			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
 			Force:           true,
 		})
-
-		log.Printf("Finished Fetching %s, err: %v", dir, err)
 
 		if err != nil && err != git.NoErrAlreadyUpToDate {
 			return dir, err

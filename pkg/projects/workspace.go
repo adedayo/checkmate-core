@@ -25,8 +25,10 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 		for _, s := range pm.ListProjectSummaries() {
 			w := s.Workspace
 			if _, present := toUpdate[w]; !present {
+				//ignore project summary if not in workspace(s) of interest
 				continue
 			}
+			///add project summary to the list to process
 			if wsw, present := ws[w]; present {
 				ws[w] = append(wsw, s)
 			} else {
