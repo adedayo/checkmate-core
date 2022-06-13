@@ -36,38 +36,6 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 			}
 		}
 
-		// ds := make(map[string][]*diagnostics.SecurityDiagnostic)
-
-		// for w, pps := range ws {
-		// 	for _, ps := range pps {
-		// 		if results, err := pm.GetScanResults(ps.ID, ps.LastScanID); err == nil {
-		// 			if sds, present := ds[w]; present {
-		// 				ds[w] = append(sds, results...)
-		// 			} else {
-		// 				ds[w] = results
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		// workspaceUniqueFiles := make(map[string]map[string]struct{})
-
-		// for w, d := range ds {
-		// 	files := make(map[string]struct{})
-		// 	for _, diag := range d {
-		// 		if diag.Location != nil {
-		// 			files[*diag.Location] = nothing
-		// 		}
-		// 	}
-		// 	workspaceUniqueFiles[w] = files
-		// 	model := GenerateModel(len(files), true, d)
-		// 	scanSummary := model.Summarise()
-		// 	workspaceSummary.Details[w] = &WorkspaceDetail{
-		// 		Summary:          scanSummary,
-		// 		ProjectSummaries: ws[w],
-		// 	}
-		// }
-
 		workspaceSummary := Workspace{
 			Details: make(map[string]*WorkspaceDetail),
 		}
