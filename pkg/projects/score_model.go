@@ -284,7 +284,7 @@ func GenerateModel(fileCount int, showSource bool, issues []*diagnostics.Securit
 	}
 
 	model.ProdAndNonProdSecretReuse = rus
-
+	issues = nil
 	return &model
 }
 
@@ -341,7 +341,7 @@ type SecretLocation struct {
 func (m *Model) Summarise() *ScanSummary {
 
 	modelCounts := m.computeMetricBases()
-
+	m.zero()
 	metric := modelCounts.scoreMetrics()
 	grade := metricToGrade(metric)
 	m.Grade = grade
@@ -354,6 +354,13 @@ func (m *Model) Summarise() *ScanSummary {
 		},
 		AdditionalInfo: m,
 	}
+}
+
+// zero expensive data
+func (m *Model) zero() {
+	m.Issues = nil
+	m.ReusedSecrets = nil
+	m.ProdAndNonProdSecretReuse = nil
 }
 
 func metricToGrade(metric float32) string {

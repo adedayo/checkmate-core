@@ -50,7 +50,9 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 				Summary:          MergeModels(tStamp, psModels...).Summarise(),
 				ProjectSummaries: ws[w],
 			}
+			psModels = nil
 		}
+		ws = nil
 
 		if wspaces.Details == nil {
 			wspaces.Details = make(map[string]*WorkspaceDetail)
@@ -60,6 +62,7 @@ func SimpleWorkspaceSummariser(pm ProjectManager, workspacesToUpdate []string) (
 		for w, wd := range workspaceSummary.Details {
 			wspaces.Details[w] = wd
 		}
+		workspaceSummary.Details = nil
 	}
 	return wspaces, nil
 }
