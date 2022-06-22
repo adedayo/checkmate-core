@@ -43,6 +43,7 @@ func (sd *SecurityDiagnostic) CSVHeaders(extraHeaders ...string) []string {
 		`SHA256`,
 		`Tags`,
 		`Detector ID`, // ProviderID
+		`Repository`,
 	}, extraHeaders...)
 }
 
@@ -84,15 +85,21 @@ func nilArrayAsEmpty(x *[]string) string {
 func (sd *SecurityDiagnostic) CSVValues(extraHeaders ...string) []string {
 	rng := adjustRange(sd.Range)
 	loc := fmt.Sprintf(`Line: %d Column: %d`, rng.Start.Line, rng.Start.Character)
+	location := nilAsEmpty(sd.Location)
+	repository := location
+	if strings.Contains(location, ".git/") {
+		repository = strings.Split(location, ".git/")[0] + ".git"
+	}
 	return append([]string{
 		nilAsEmpty(sd.Source),
 		sd.Justification.Headline.Confidence.String(),
 		sd.Justification.Headline.Description,
-		nilAsEmpty(sd.Location),
+		location,
 		loc,
 		nilAsEmpty(sd.SHA256),
 		nilArrayAsEmpty(sd.Tags),
 		nilAsEmpty(sd.ProviderID),
+		repository,
 	}, additionalValues(sd.Tags, extraHeaders...)...)
 }
 
