@@ -14,6 +14,10 @@ import (
 	"golang.org/x/text/transform"
 )
 
+var (
+	dash = "-"
+)
+
 //SecurityDiagnostic describes a security issue
 type SecurityDiagnostic struct {
 	Justification  Justification `json:"justification,omitempty"`
@@ -60,6 +64,7 @@ func GetExtraHeaders(diags []*SecurityDiagnostic) []string {
 			}
 		}
 	}
+	diags = nil
 	keys := make([]string, 0, len(headers))
 	for k := range headers {
 		keys = append(keys, k)
@@ -68,16 +73,16 @@ func GetExtraHeaders(diags []*SecurityDiagnostic) []string {
 	return keys
 }
 
-func nilAsEmpty(x *string) string {
+func nilAsDash(x *string) string {
 	if x == nil {
-		return ""
+		return dash
 	}
 	return *x
 }
 
-func nilArrayAsEmpty(x *[]string) string {
+func nilArrayAsDash(x *[]string) string {
 	if x == nil {
-		return ""
+		return dash
 	}
 	return strings.Join(*x, " ")
 }
@@ -85,22 +90,33 @@ func nilArrayAsEmpty(x *[]string) string {
 func (sd *SecurityDiagnostic) CSVValues(extraHeaders ...string) []string {
 	rng := adjustRange(sd.Range)
 	loc := fmt.Sprintf(`Line: %d Column: %d`, rng.Start.Line, rng.Start.Character)
-	location := nilAsEmpty(sd.Location)
+	location := nilAsDash(sd.Location)
 	repository := location
 	if strings.Contains(location, ".git/") {
 		repository = strings.Split(location, ".git/")[0] + ".git"
 	}
-	return append([]string{
-		nilAsEmpty(sd.Source),
+	return emptyAsDash(append([]string{
+		nilAsDash(sd.Source),
 		sd.Justification.Headline.Confidence.String(),
 		sd.Justification.Headline.Description,
 		location,
 		loc,
-		nilAsEmpty(sd.SHA256),
-		nilArrayAsEmpty(sd.Tags),
-		nilAsEmpty(sd.ProviderID),
+		nilAsDash(sd.SHA256),
+		nilArrayAsDash(sd.Tags),
+		nilAsDash(sd.ProviderID),
 		repository,
-	}, additionalValues(sd.Tags, extraHeaders...)...)
+	}, additionalValues(sd.Tags, extraHeaders...)...))
+}
+
+//replace empty values with a dash
+func emptyAsDash(data []string) []string {
+	for i, v := range data {
+		if strings.TrimSpace(v) == "" {
+			data[i] = dash
+		}
+	}
+
+	return data
 }
 
 func additionalValues(tags *[]string, extraHeaders ...string) []string {
