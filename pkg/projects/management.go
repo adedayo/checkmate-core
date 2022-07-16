@@ -208,7 +208,7 @@ func (spm simpleProjectManager) GetCodeContext(cnt common.CodeContext) string {
 }
 
 func GetCodeContext(codeBaseDir string, cnt common.CodeContext) (out string) {
-	if !strings.Contains(cnt.Location, ".git") {
+	if !strings.Contains(cnt.Location, ".git/") {
 		//Filesystem location
 		file, err := os.Open(cnt.Location)
 		if err != nil {
@@ -222,7 +222,7 @@ func GetCodeContext(codeBaseDir string, cnt common.CodeContext) (out string) {
 		//likely a git checkout, try and open it if the codebase is still there
 		z := strings.Split(cnt.Location, ".git/")
 		if len(z) == 2 {
-			clonePath := strings.ToLower(path.Base(z[0])) // we lower-case during clone
+			clonePath := path.Base(z[0]) // we don't lowercase this anymore
 			location := path.Join(codeBaseDir, cnt.ProjectID, clonePath, z[1])
 			file, err := os.Open(location)
 			if err != nil {

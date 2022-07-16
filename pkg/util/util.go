@@ -17,36 +17,56 @@ var (
 	reNL          = regexp.MustCompile(`\n`)
 )
 
+//Provide repository index context for every file that is scanned
+//In FindFiles(paths []string). The index of the paths is mapped to each file found during search
+type RepositoryIndexedFile struct {
+	RepositoryIndex int //repository index of the under which the file is found
+	File            string
+}
+
 //FindFiles recursively searches the directories and files contained in paths and returns a unique list of files
-func FindFiles(paths []string) []string {
+func FindFiles(paths []string) []RepositoryIndexedFile {
 
-	directoryOrFile := make(map[string]bool)
-	worklist := make(map[string]struct{})
-	for _, p := range paths {
+	// directoryOrFile := make(map[string]bool)
+	// worklist := make(map[string]struct{})
+	for i, p := range paths {
 		path := filepath.Clean(p)
-		if fileInfo, err := os.Stat(path); !os.IsNotExist(err) {
-			directoryOrFile[path] = fileInfo.IsDir()
+		paths[i] = path
+		// if fileInfo, err := os.Stat(path); !os.IsNotExist(err) {
+		// 	directoryOrFile[path] = fileInfo.IsDir()
+		// }
+	}
+
+	out := []RepositoryIndexedFile{}
+	for i, path := range paths {
+		for _, file := range getFiles(path) {
+			out = append(out, RepositoryIndexedFile{
+				RepositoryIndex: i,
+				File:            file,
+			})
 		}
 	}
 
-	var nothing struct{}
-	//collect unique files to analyse
-	for file, isDir := range directoryOrFile {
-		if isDir {
-			for _, f := range getFiles(file) {
-				worklist[f] = nothing
-			}
-		} else {
-			worklist[file] = nothing
-		}
-	}
+	// var nothing struct{}
+	// //collect unique files to analyse
+	// for file, isDir := range directoryOrFile {
+	// 	if isDir {
+	// 		for _, f := range getFiles(file) {
+	// 			worklist[f] = nothing
+	// 		}
+	// 	} else {
+	// 		worklist[file] = nothing
+	// 	}
+	// }
 
-	result := make([]string, 0, len(worklist))
-	for path := range worklist {
-		result = append(result, path)
-	}
+	// result := make([]string, 0, len(worklist))
+	// for path := range worklist {
+	// 	result = append(result, path)
+	// }
 
-	return result
+	// worklist = nil
+
+	return out
 }
 
 func getFiles(dir string) (paths []string) {
@@ -66,13 +86,13 @@ func getFiles(dir string) (paths []string) {
 //additional utility such as mapping a source index to the line and character, i.e. the `code.Position` in the source
 type ResourceMultiplexer interface {
 	//SetSource is the source reader to multiplex to multiple consumers, which will be provided with a copy of the source data as it is being streamed in from the source
-	SetResourceAndConsumers(filePath string, source *io.Reader, provideSourceInDiagnostics bool, consumers ...ResourceConsumer)
+	SetResourceAndConsumers(filePath RepositoryIndexedFile, source *io.Reader, provideSourceInDiagnostics bool, consumers ...ResourceConsumer)
 }
 
 //PathMultiplexer interface defines an aggregator of analysers that can consume filesystem paths and URIs and process them
 type PathMultiplexer interface {
 	SetPathConsumers(consumers ...PathConsumer)
-	ConsumePath(path string)
+	ConsumePath(path RepositoryIndexedFile)
 }
 
 type defaultPathMultiplexer struct {
@@ -83,7 +103,7 @@ func (dpm *defaultPathMultiplexer) SetPathConsumers(consumers ...PathConsumer) {
 	dpm.consumers = consumers
 }
 
-func (dpm *defaultPathMultiplexer) ConsumePath(path string) {
+func (dpm *defaultPathMultiplexer) ConsumePath(path RepositoryIndexedFile) {
 	for _, c := range dpm.consumers {
 		c.ConsumePath(path)
 	}
@@ -96,7 +116,7 @@ type PositionProvider interface {
 
 //PathConsumer is a sink for paths and URIs
 type PathConsumer interface {
-	ConsumePath(path string)
+	ConsumePath(path RepositoryIndexedFile)
 	diagnostics.ExclusionProvider
 }
 
@@ -113,7 +133,7 @@ type ResourceConsumer interface {
 	//character location of the first character in the stream
 	Consume(startIndex int64, source string)
 	//ConsumePath allows resource consumers that process filepaths directly to analyse files on disk
-	ConsumePath(filePath string)
+	ConsumePath(filePath RepositoryIndexedFile)
 	SetLineKeeper(*LineKeeper)
 	//ShouldProvideSourceInDiagnostics toggles whether source evidence should be provided with diagnostics, defaults to false
 	ShouldProvideSourceInDiagnostics(bool)
@@ -122,20 +142,20 @@ type ResourceConsumer interface {
 }
 
 //NewResourceMultiplexer creates a source multiplexer over an input reader
-func NewResourceMultiplexer(filePath string, source *io.Reader, provideSource bool, consumers ...ResourceConsumer) ResourceMultiplexer {
+func NewResourceMultiplexer(filePath RepositoryIndexedFile, source *io.Reader, provideSource bool, consumers ...ResourceConsumer) ResourceMultiplexer {
 	sm := defaultResourceMultiplexer{}
 	sm.SetResourceAndConsumers(filePath, source, provideSource, consumers...)
 	return &sm
 }
 
 type defaultResourceMultiplexer struct {
-	filePath   string
+	filePath   RepositoryIndexedFile
 	source     *io.Reader
 	consumers  []ResourceConsumer
 	lineKeeper LineKeeper
 }
 
-func (sm *defaultResourceMultiplexer) SetResourceAndConsumers(filePath string, src *io.Reader, provideSource bool, consumers ...ResourceConsumer) {
+func (sm *defaultResourceMultiplexer) SetResourceAndConsumers(filePath RepositoryIndexedFile, src *io.Reader, provideSource bool, consumers ...ResourceConsumer) {
 	sm.filePath = filePath
 	sm.source = src
 	sm.consumers = consumers

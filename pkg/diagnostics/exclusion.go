@@ -171,7 +171,7 @@ func (wl *defaultExclusionProvider) cleanSerialisationConstructs() (err error) {
 	return
 }
 
-//compileRegExs ensures the regular expressions defined are compiled before use
+//compileRegExs ensures the regular expressions defined are compilable before use
 func (wl *defaultExclusionProvider) compileRegExs() error {
 	wl.globallyExcludedRegExsCompiled = make([]*regexp.Regexp, 0)
 	bestEffortErrors := []error{}

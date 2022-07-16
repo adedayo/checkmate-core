@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"sort"
 	"strings"
@@ -32,9 +32,10 @@ type SecurityDiagnostic struct {
 	//Location is an optional value that could contain filepath or URI of resource that this diagnostic applies to
 	Location *string `json:"location,omitempty"`
 	//used for identifying the source of the diagnostics
-	ProviderID *string   `json:"providerID,omitempty"`
-	Excluded   bool      //indicates whether or not this diagnostics has been excluded
-	Tags       *[]string `json:"tags,omitempty"` //optionally annotate diagnostic with tags, e.g. "test"
+	ProviderID      *string   `json:"providerID,omitempty"`
+	Excluded        bool      //indicates whether or not this diagnostics has been excluded
+	Tags            *[]string `json:"tags,omitempty"` //optionally annotate diagnostic with tags, e.g. "test"
+	RepositoryIndex int       `json:"-"`              //used to track issue repository internally, not serialised
 }
 
 func (sd *SecurityDiagnostic) CSVHeaders(extraHeaders ...string) []string {
@@ -304,11 +305,12 @@ func (sdp *DefaultSecurityDiagnosticsProvider) Broadcast(diagnostics *SecurityDi
 	//ensure that the source, if provided, is converted to UTF-8
 	if diagnostics.Source != nil {
 		r := transform.NewReader(bytes.NewBufferString(*diagnostics.Source), unicode.UTF8.NewDecoder())
-		data, err := ioutil.ReadAll(r)
+		data, err := io.ReadAll(r)
 		if err != nil {
 			log.Println(err)
 		} else {
 			*diagnostics.Source = string(data)
+			data = nil
 		}
 	}
 
