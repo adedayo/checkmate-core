@@ -129,7 +129,8 @@ func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, e
 				PolicyString: desc.ScanPolicy.PolicyString,
 			}}, fmt.Errorf("error parsing scan exclusion, reverting to default: %s", err.Error())
 	}
-	// pDesc.ScanPolicy.Policy = policy
+	//if all good, assign parsed policy
+	pDesc.ScanPolicy.Policy = policy
 	return pDesc, nil
 }
 
