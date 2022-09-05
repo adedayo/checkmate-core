@@ -62,46 +62,53 @@ func GenerateSampleExclusion() string {
 
 # Use GloballyExcludedRegExs to specify regular expressions of matching strings that should be ignored as secrets anywhere they are found
 # For example (uncomment the next three lines):
-# GloballyExcludedRegExs:
+#GloballyExcludedRegExs:
 #    - .*keyword.* #ignore any value with the word keyword in it 
 #    - .*public.*  #ignore any value with the word public in it 
-#
+
 
 # Use GloballyExcludedStrings to specify strings that should be ignored as secrets anywhere they are found
 # For example (uncomment the next three lines):
-# GloballyExcludedStrings:
+#GloballyExcludedStrings:
 #    - NotAPassword
 #    - "Another non-password"
-#
+
 
 # Use PathExclusionRegExs to specify regular expressions that ignore files and directories, which if matched should not be scanned for secrets
-# For example (uncomment the next five lines):
-# PathExclusionRegExs:
-#     - .*/ignore/subpath/.* # ignore files and directories which contain the subpath '/ignore/subpath/' in its name
-#     - .*/README.md # ignore the file README.md wherever it may be found
-#     - .*/package-lock.json # ignore package-lock.json files wherever they are found
-#     - .*[.]html? # ignore all HTML files (ending with extension .html or .htm)
+PathExclusionRegExs:
+#    - .*/ignore/subpath/.* # ignore files and directories which contain the subpath '/ignore/subpath/' in its name
+#    - .*/README[.]md # ignore the file README.md wherever it may be found
+    - .*/package-lock[.]json # ignore package-lock.json files wherever they are found
+    - .*[.](html?|s?css|sass|less) # ignore webpage and stylesheet files (ending with extension .html, .htm, .css, .scss etc)
 
+ #Use PerFileExcludedStrings to specify strings that should be excluded in a given file (indicated by its full path)
+ #For example (uncomment the next six lines):
+ #PerFileExcludedStrings:
+ #    /home/user/myfile.txt: #file of interest
+ #        - "ignore this value" # a value to ignore in the file
+ #        - "another value" # another value to ignore in the file /home/user/myfile.txt
+ #    "/home/user/second file.txt": #another file of interest
+ #        - "not interesting" #ignore this value in the file
 
-# Use PerFileExcludedStrings to specify strings that should be excluded in a given file (indicated by its full path)
-# For example (uncomment the next six lines):
-# PerFileExcludedStrings:
-#     /home/user/myfile.txt: #file of interest
-#         - "ignore this value" # a value to ignore in the file
-#         - "another value" # another value to ignore in the file /home/user/myfile.txt
-#     "/home/user/second file.txt": #another file of interest
-#         - "not interesting" #ignore this value in the file
-
-# PathRegexExcludedRegex is a versatile path/directory and value regular expression-based exclusion config. 
-# Use it to simultaneously specify both path and value of non-interest to ignore.
-# For example (uncomment the next six lines):
-# PathRegexExcludedRegex:
-#     .*/ignore/subpath/.*: #ignore all files and directories that have this subpath in their name
-#         - .*public_key.* #ignore values that contain the phrase public_key
-#         - "not secret" #ignore value 'not secret'
-#     .*/keyword/directory/.*: #another path we'd like to target for ignoring certain values
-#         - .*keyword.* #ignore any value with the word keyword in it in any file whose path contains subpath '/keyword/directory/'
+#PathRegexExcludedRegex is a versatile path/directory and value regular expression-based exclusion config. 
+#Use it to simultaneously specify both path and value of non-interest to ignore.
+#For example (uncomment the next six lines):
+#PathRegexExcludedRegex:
+#    .*/ignore/subpath/.*: #ignore all files and directories that have this subpath in their name
+#        - .*public_key.* #ignore values that contain the phrase public_key
+#        - "not secret" #ignore value 'not secret'
+#    .*/keyword/directory/.*: #another path we'd like to target for ignoring certain values
+#        - .*keyword.* #ignore any value with the word keyword in it in any file whose path contains subpath '/keyword/directory/'
 `
+}
+
+func DefaultExclusion() ExcludeDefinition {
+	return ExcludeDefinition{
+		PathExclusionRegExs: []string{
+			`.*/(package-lock|npm-shrinkwrap|composer)[.]json`, // ignore package-lock.json and other dependency pinning files wherever they are found
+			`.*[.](html?|s?css|sass|less)`,                     // ignore webpage and stylesheet files (ending with extension .html, .htm, .css, .scss etc)
+		},
+	}
 }
 
 //defaultExclusionProvider contains various mechanisms for excluding false positives

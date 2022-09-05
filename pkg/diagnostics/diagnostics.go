@@ -145,12 +145,25 @@ func additionalValues(tags *[]string, extraHeaders ...string) []string {
 //HasTag cheks whether diagnostic has the specified tag
 func (sd *SecurityDiagnostic) HasTag(tag string) bool {
 	if sd.Tags == nil {
+		if tag == "prod" {
+			return true //prod is a virtual tag, indicated by absence of "test" tag
+		}
 		return false
 	}
 	for _, t := range *sd.Tags {
 		if t == tag {
 			return true
 		}
+	}
+
+	//treat "prod" as a virtual tag indicated by the absence of "test" tag
+	if tag == "prod" {
+		for _, t := range *sd.Tags {
+			if t == "test" {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }

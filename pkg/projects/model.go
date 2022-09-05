@@ -11,6 +11,7 @@ import (
 
 	"github.com/adedayo/checkmate-core/pkg/diagnostics"
 	gitutils "github.com/adedayo/checkmate-core/pkg/git"
+	"github.com/adedayo/checkmate-core/pkg/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -95,15 +96,20 @@ type ProjectDescriptionWire struct {
 
 func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, error) {
 
-	var policy diagnostics.ExcludeDefinition
+	desc.Repositories = sanitiseRepositories(desc.Repositories)
+	var policy diagnostics.ExcludeDefinition = diagnostics.DefaultExclusion()
+	policyID := desc.ScanPolicy.ID
+	if policyID == "" {
+		policyID = util.NewRandomUUID().String()
+	}
 	pDesc := ProjectDescription{
 		Name:         desc.Name,
 		Repositories: desc.Repositories,
 		Workspace:    desc.Workspace,
 		ScanPolicy: ScanPolicy{
-			ID:     desc.ScanPolicy.ID,
+			ID:     policyID,
 			Config: desc.ScanPolicy.Config,
-			Policy: diagnostics.ExcludeDefinition{},
+			Policy: policy,
 		}}
 
 	if desc.ScanPolicy.PolicyString == "" {
@@ -119,12 +125,21 @@ func (desc ProjectDescriptionWire) ToProjectDescription() (ProjectDescription, e
 			ScanPolicy: ScanPolicy{
 				ID:           desc.ScanPolicy.ID,
 				Config:       desc.ScanPolicy.Config,
-				Policy:       diagnostics.ExcludeDefinition{},
+				Policy:       policy,
 				PolicyString: desc.ScanPolicy.PolicyString,
 			}}, fmt.Errorf("error parsing scan exclusion, reverting to default: %s", err.Error())
 	}
-	pDesc.ScanPolicy.Policy = policy
+	// pDesc.ScanPolicy.Policy = policy
 	return pDesc, nil
+}
+
+func sanitiseRepositories(repository []Repository) []Repository {
+	for i, r := range repository {
+		r.Location = gitutils.GitToHTTPS(r.Location)
+		repository[i] = r
+	}
+
+	return repository
 }
 
 type Repository struct {
@@ -397,6 +412,52 @@ type IssueFilter struct {
 	Confidence []string //high, med, low, info
 	Tags       []string //test, prod
 }
+
+func empty(data []string) bool {
+	return len(data) == 0
+}
+
+func (filter IssueFilter) Filter(in []*diagnostics.SecurityDiagnostic) (out []*diagnostics.SecurityDiagnostic) {
+
+	if empty(filter.Confidence) && empty(filter.Tags) {
+		//do nothing
+		return in
+	}
+	for _, sd := range in {
+
+		if !empty(filter.Confidence) && empty(filter.Tags) {
+			for _, v := range filter.Confidence {
+				if sd.Justification.Headline.Confidence.String() == v {
+					out = append(out, sd)
+					break
+				}
+			}
+		} else if !empty(filter.Tags) && empty(filter.Confidence) {
+			for _, v := range filter.Tags {
+				if sd.HasTag(v) {
+					out = append(out, sd)
+					break
+				}
+			}
+		} else { //neither tags nor confidence is empty
+			for _, c := range filter.Confidence {
+				if sd.Justification.Headline.Confidence.String() == c {
+					for _, t := range filter.Tags {
+						if sd.HasTag(t) {
+							out = append(out, sd)
+							goto next
+						}
+					}
+				}
+			}
+		}
+
+	next:
+	}
+
+	return
+}
+
 type PagedResult struct {
 	Total       int
 	Page        int

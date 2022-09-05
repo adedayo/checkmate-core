@@ -99,13 +99,14 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 // returns the checkout location on disk for the specified git repository, given a base directory
 // The pattern for base directory is baseDirectory := path.Join(pm.GetCodeBaseDir(), projectID)
 func GetCheckoutLocation(repository, baseDirectory string) (string, error) {
-	repository = normaliseRepository(repository)
+	repository = GitToHTTPS(repository)
 	return filepath.Abs(path.Clean(path.Join(baseDirectory, strings.TrimSuffix(path.Base(repository), ".git"))))
 }
 
 //replaces git@ with https:// in repository URL
-func normaliseRepository(repository string) string {
+func GitToHTTPS(repository string) string {
 	//git@ is not supported, replace with https://
+	repository = strings.TrimSpace(repository)
 	if strings.HasPrefix(strings.ToLower(repository), "git@") {
 		repository = strings.Replace(repository, ":", "/", 1) //replace the : in e.g. git@github.com:adedayo/checkmate.git with a /
 		repository = repository[4:]                           //cut out git@
