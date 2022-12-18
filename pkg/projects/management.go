@@ -67,7 +67,6 @@ type ProjectManager interface {
 	GetCodeContext(cnt common.CodeContext) string
 	GetProjectLocation(projID string) string
 	GetGitConfigManager() (gitutils.GitConfigManager, error)
-	// GetScanLocation(projID, scanID string) string
 	//CheckMate base directory
 	GetBaseDir() string
 	//Base directory for code checkout
@@ -128,7 +127,7 @@ func MakeSimpleProjectManager(checkMateBaseDir string) ProjectManager {
 // 	}
 // }
 
-//utility to migate YAML format workspace
+// utility to migate YAML format workspace
 func MigrateYAMLWorkspace(spm *simpleProjectManager) {
 	spm.workspaceFileMutex.Lock()
 	var ws Workspace
@@ -450,8 +449,8 @@ func (spm simpleProjectManager) SaveWorkspaces(ws *Workspace) error {
 	return nil
 }
 
-//GetIssues returns issues page-by-page according to specified page size. A page
-//size of 0 returns all issues
+// GetIssues returns issues page-by-page according to specified page size. A page
+// size of 0 returns all issues
 func (spm simpleProjectManager) GetIssues(paginated PaginatedIssueSearch) (pr *PagedResult, err error) {
 
 	results, err := spm.GetScanResults(paginated.ProjectID, paginated.ScanID)
@@ -634,7 +633,7 @@ func (spm simpleProjectManager) GetScanResults(projID, scanID string) (results [
 	return results, nil
 }
 
-//side effect of saving the scan summary in a file
+// side effect of saving the scan summary in a file
 func (spm simpleProjectManager) summariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) (*ScanSummary, error) {
 	spm.scanSummaryFileMutexes[scanID] = &sync.RWMutex{}
 	spm.scanSummaryFileMutexes[scanID].Lock()
@@ -860,7 +859,7 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	}
 }
 
-//retrieve the git commits (HEAD) of the repositories about to be scanned. repoLocation -> scannedCommit
+// retrieve the git commits (HEAD) of the repositories about to be scanned. repoLocation -> scannedCommit
 func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, progressMonitor func(diagnostics.Progress)) map[string]ScannedCommit {
 	out := make(map[string]ScannedCommit)
 	if proj, err := pm.GetProject(projectID); err == nil {
@@ -958,7 +957,7 @@ func RetrieveCommitsToBeScanned(projectID, scanID string, pm ProjectManager, pro
 	return out
 }
 
-//once the scan completes, store the scan ID, the git commit hash (HEAD) of the scanned repositories as well as the scan completion time
+// once the scan completes, store the scan ID, the git commit hash (HEAD) of the scanned repositories as well as the scan completion time
 func (spm simpleProjectManager) updateScanHistory(projectID, scanID string, scanSummary *ScanSummary, scannedCommits map[string]ScannedCommit) (*ProjectSummary, error) {
 	pSum, err := spm.GetProjectSummary(projectID)
 	if err != nil {

@@ -15,23 +15,28 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
-//Clone a repository,returning the location on disk where the clone is placed
-func Clone(ctx context.Context, repository string, options *GitCloneOptions) (string, error) {
+// Clone a repository,returning the location on disk where the clone is placed
+func Clone(ctx context.Context, repository string, options *GitCloneOptions) (CloneDetail, error) {
 
 	dir, err := GetCheckoutLocation(repository, options.BaseDir)
 
+	out := CloneDetail{
+		Location:   dir,
+		Repository: repository,
+	}
+
 	defer func() {
 		if err != nil {
-			log.Printf("Error: %v, %s\n", err, dir)
+			log.Printf("Clone error: %v, %s\n", err, dir)
 		}
 	}()
 
 	if err != nil {
-		return dir, err
+		return out, err
 	}
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		return dir, err
+		return out, err
 	}
 
 	var repo *git.Repository
@@ -51,29 +56,42 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 			// Progress: os.Stdout,
 			Auth:            auth,
 			Depth:           options.Depth,
-			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
+			InsecureSkipTLS: true, //allow self-signed on-prem Git servers TODO: make configurable
 			NoCheckout:      options.CommitHash != "",
 		})
 		if err != nil {
-			return dir, err
+			return out, err
 		}
+
+		//record the branch
+		if head, e := repo.Head(); e == nil {
+			branch := head.Name().Short()
+			out.Branch = &branch
+		}
+
 	} else {
 		//the directory already exists, so, simply fetch if possible
 		repo, err = git.PlainOpen(dir)
 
 		if err != nil {
-			return dir, err
+			return out, err
+		}
+
+		//record the branch
+		if head, e := repo.Head(); e == nil {
+			branch := head.Name().Short()
+			out.Branch = &branch
 		}
 
 		err = repo.FetchContext(ctx, &git.FetchOptions{
 			Auth:            auth,
 			Depth:           options.Depth,
-			InsecureSkipTLS: true, //allow self-signed on-prem servers TODO: make configurable
+			InsecureSkipTLS: true, //allow self-signed on-prem Git servers TODO: make configurable
 			Force:           true,
 		})
 
 		if err != nil && err != git.NoErrAlreadyUpToDate {
-			return dir, err
+			return out, err
 		}
 
 		err = nil
@@ -82,7 +100,7 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 	if options.CommitHash != "" {
 		w, err := repo.Worktree()
 		if err != nil {
-			return dir, err
+			return out, err
 		}
 
 		err = w.Checkout(&git.CheckoutOptions{
@@ -90,10 +108,10 @@ func Clone(ctx context.Context, repository string, options *GitCloneOptions) (st
 		})
 
 		if err != nil {
-			return dir, err
+			return out, err
 		}
 	}
-	return dir, nil
+	return out, nil
 }
 
 // returns the checkout location on disk for the specified git repository, given a base directory
@@ -103,7 +121,7 @@ func GetCheckoutLocation(repository, baseDirectory string) (string, error) {
 	return filepath.Abs(path.Clean(path.Join(baseDirectory, strings.TrimSuffix(path.Base(repository), ".git"))))
 }
 
-//replaces git@ with https:// in repository URL
+// replaces git@ with https:// in repository URL
 func GitToHTTPS(repository string) string {
 	//git@ is not supported, replace with https://
 	repository = strings.TrimSpace(repository)

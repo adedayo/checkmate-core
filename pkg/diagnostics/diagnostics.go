@@ -18,7 +18,7 @@ var (
 	dash = "-"
 )
 
-//SecurityDiagnostic describes a security issue
+// SecurityDiagnostic describes a security issue
 type SecurityDiagnostic struct {
 	Justification  Justification `json:"justification,omitempty"`
 	Range          code.Range    `json:"range,omitempty"`
@@ -52,7 +52,7 @@ func (sd *SecurityDiagnostic) CSVHeaders(extraHeaders ...string) []string {
 	}, extraHeaders...)
 }
 
-//Derives additional headers from Tags, sorted in alphabetic order
+// Derives additional headers from Tags, sorted in alphabetic order
 func GetExtraHeaders(diags []*SecurityDiagnostic) []string {
 	headers := make(map[string]bool)
 	for _, sd := range diags {
@@ -109,7 +109,7 @@ func (sd *SecurityDiagnostic) CSVValues(extraHeaders ...string) []string {
 	}, additionalValues(sd.Tags, extraHeaders...)...))
 }
 
-//replace empty values with a dash
+// replace empty values with a dash
 func emptyAsDash(data []string) []string {
 	for i, v := range data {
 		if strings.TrimSpace(v) == "" {
@@ -142,7 +142,7 @@ func additionalValues(tags *[]string, extraHeaders ...string) []string {
 	return []string{}
 }
 
-//HasTag cheks whether diagnostic has the specified tag
+// HasTag cheks whether diagnostic has the specified tag
 func (sd *SecurityDiagnostic) HasTag(tag string) bool {
 	if sd.Tags == nil {
 		if tag == "prod" {
@@ -178,7 +178,7 @@ func (sd *SecurityDiagnostic) GetValue() string {
 
 }
 
-//AddTag adds a tag to the diagnostic
+// AddTag adds a tag to the diagnostic
 func (sd *SecurityDiagnostic) AddTag(tag string) {
 	if sd.Tags == nil {
 		sd.Tags = &[]string{tag}
@@ -187,7 +187,7 @@ func (sd *SecurityDiagnostic) AddTag(tag string) {
 	}
 }
 
-//GoString stringify
+// GoString stringify
 func (sd SecurityDiagnostic) GoString() string {
 	sd.Range = adjustRange(sd.Range)
 	sd.HighlightRange = adjustRange(sd.HighlightRange)
@@ -195,7 +195,7 @@ func (sd SecurityDiagnostic) GoString() string {
 	return string(b)
 }
 
-//adjust the 0-based position to 1-based for easy human debugging
+// adjust the 0-based position to 1-based for easy human debugging
 func adjustRange(in code.Range) (out code.Range) {
 	out.Start.Line = in.Start.Line + 1
 	out.Start.Character = in.Start.Character + 1
@@ -204,7 +204,7 @@ func adjustRange(in code.Range) (out code.Range) {
 	return
 }
 
-//CharRange describes the location in the file where a range of "text" is found
+// CharRange describes the location in the file where a range of "text" is found
 type CharRange struct {
 	StartIndex, EndIndex int64
 }
@@ -216,7 +216,7 @@ func (thisRange *CharRange) Contains(thatRange *CharRange) bool {
 	return false
 }
 
-//Confidence reflects the degree of confidence that we have in an assessment
+// Confidence reflects the degree of confidence that we have in an assessment
 type Confidence int
 
 const (
@@ -249,17 +249,17 @@ func (conf Confidence) String() string {
 	}
 }
 
-//GoString go stringify
+// GoString go stringify
 func (conf Confidence) GoString() string {
 	return conf.String()
 }
 
-//MarshalJSON makes a string representation of the confidence
+// MarshalJSON makes a string representation of the confidence
 func (conf Confidence) MarshalJSON() ([]byte, error) {
 	return json.Marshal(conf.String())
 }
 
-//UnmarshalJSON unmarshals a string representation of the confidence to Confidence
+// UnmarshalJSON unmarshals a string representation of the confidence to Confidence
 func (conf *Confidence) UnmarshalJSON(data []byte) error {
 	cc := strings.Trim(string(data), `"`)
 	switch cc {
@@ -279,41 +279,41 @@ func (conf *Confidence) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-//Evidence is an atomic piece of information that describes a security diagnostics
+// Evidence is an atomic piece of information that describes a security diagnostics
 type Evidence struct {
 	Description string     `json:"description"`
 	Confidence  Confidence `json:"confidence"`
 }
 
-//Justification describes why a piece of security diagnostic has been generated
+// Justification describes why a piece of security diagnostic has been generated
 type Justification struct {
 	Headline Evidence   `json:"headline,omitempty"` //Headline evidence
 	Reasons  []Evidence `json:"reasons,omitempty"`  //sub-reasons that justify why this is an issue
 }
 
-//SecurityDiagnosticsProvider interface for security diagnostics providers
+// SecurityDiagnosticsProvider interface for security diagnostics providers
 type SecurityDiagnosticsProvider interface {
 	//AddConsumers adds consumers to be notified by this provider when there is a new diagnostics
 	AddConsumers(consumers ...SecurityDiagnosticsConsumer)
 	Broadcast(diagnostic *SecurityDiagnostic)
 }
 
-//SecurityDiagnosticsConsumer is an interface with a callback to receive security diagnostics
+// SecurityDiagnosticsConsumer is an interface with a callback to receive security diagnostics
 type SecurityDiagnosticsConsumer interface {
 	ReceiveDiagnostic(diagnostic *SecurityDiagnostic)
 }
 
-//DefaultSecurityDiagnosticsProvider a default implementation
+// DefaultSecurityDiagnosticsProvider a default implementation
 type DefaultSecurityDiagnosticsProvider struct {
 	consumers []SecurityDiagnosticsConsumer
 }
 
-//AddConsumers adds consumers to be notified by this provider when there is a new diagnostics
+// AddConsumers adds consumers to be notified by this provider when there is a new diagnostics
 func (sdp *DefaultSecurityDiagnosticsProvider) AddConsumers(consumers ...SecurityDiagnosticsConsumer) {
 	sdp.consumers = append(sdp.consumers, consumers...)
 }
 
-//Broadcast sends diagnostics to all registered consumers
+// Broadcast sends diagnostics to all registered consumers
 func (sdp *DefaultSecurityDiagnosticsProvider) Broadcast(diagnostics *SecurityDiagnostic) {
 	//ensure that the source, if provided, is converted to UTF-8
 	if diagnostics.Source != nil {

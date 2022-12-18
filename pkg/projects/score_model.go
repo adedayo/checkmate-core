@@ -75,7 +75,7 @@ type ModelCounts struct {
 	SecretReuseCountBuckets          []int   `yaml:"secretReuseCountBuckets" json:"secretReuseCountBuckets"`
 }
 
-//100% basis metric
+// 100% basis metric
 func (mc ModelCounts) scoreMetrics() float32 {
 
 	pvt := mc.calculateProductionVsTestSecretReuse()
@@ -92,8 +92,8 @@ func (mc ModelCounts) scoreMetrics() float32 {
 	return metrics
 }
 
-//penalises the use of sensitive files (e.g. certificates, key stores etc) in non-test (critical = 0%).
-//If all instances are in a test context, then a 70% mark is returned instead of 100% max score
+// penalises the use of sensitive files (e.g. certificates, key stores etc) in non-test (critical = 0%).
+// If all instances are in a test context, then a 70% mark is returned instead of 100% max score
 func (mc ModelCounts) calculateSensitiveFilesPenalty() (score float32) {
 
 	if mc.CriticalSensitiveFileCount > 0 {
@@ -168,7 +168,7 @@ func (mc ModelCounts) calculateHigherConfidencePenalties() float32 {
 	return score
 }
 
-//penalise for the number of reuse
+// penalise for the number of reuse
 func (mc *ModelCounts) collectSecretsReuseMetrics() (score float32) {
 	reuseCount := 0
 	reuseEntropy := float64(0)
@@ -337,7 +337,7 @@ type SecretLocation struct {
 	HighlightRange code.Range `json:"highLightRange"`
 }
 
-//Summarise converts model to a ScanSummary, attaching the model to AdditionalInfo
+// Summarise converts model to a ScanSummary, attaching the model to AdditionalInfo
 func (m *Model) Summarise() *ScanSummary {
 
 	modelCounts := m.computeMetricBases()
@@ -360,7 +360,7 @@ func (m *Model) Summarise() *ScanSummary {
 func (m *Model) zero() {
 	m.Issues = nil
 	m.ReusedSecrets = nil
-	m.ProdAndNonProdSecretReuse = nil
+	// m.ProdAndNonProdSecretReuse = nil //this is not that expensive
 }
 
 func metricToGrade(metric float32) string {
@@ -444,7 +444,7 @@ func (m *Model) calculateSensitiveFilesPenalty() {
 	}
 }
 
-//penalise for the number of reuse
+// penalise for the number of reuse
 func (m *Model) collectSecretsReuseMetrics() {
 	for _, v := range m.ReusedSecrets {
 		m.SecretReuseCountBuckets = append(m.SecretReuseCountBuckets, len(v))

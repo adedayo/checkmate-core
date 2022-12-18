@@ -16,6 +16,10 @@ var (
 	gitConfigManager GitConfigManager
 )
 
+type CloneDetail struct {
+	Repository, Location string
+	Branch               *string
+}
 type Commit struct {
 	Author
 	Hash, Branch string
@@ -170,7 +174,7 @@ type GitConfigManager interface {
 	SaveConfig(*GitServiceConfig) error
 }
 
-//Git Service Config Manager
+// Git Service Config Manager
 func NewGitConfigManager(baseDirectory string) GitConfigManager {
 	location := path.Join(baseDirectory, "config")
 
