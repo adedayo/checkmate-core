@@ -88,7 +88,15 @@ func (svc GitService) MakeAuth() *GitAuth {
 
 type GitServiceConfig struct {
 	GitServices map[GitServiceType]map[string]*GitService
-	// manager     *configManager
+	manager     GitConfigManager
+}
+
+func (gsc GitServiceConfig) GetConfigManager() GitConfigManager {
+	return gsc.manager
+}
+
+func (gsc *GitServiceConfig) SetConfigManager(manager GitConfigManager) {
+	gsc.manager = manager
 }
 
 func (gsc GitServiceConfig) IsServiceConfigured(service GitServiceType) bool {
@@ -127,10 +135,11 @@ func (gsc *GitServiceConfig) AddService(service *GitService) error {
 	} else {
 		gsc.GitServices[serviceType] = map[string]*GitService{service.ID: service}
 	}
-	if gitConfigManager == nil {
-		return errors.New("No Git configiration manager registered")
+	manager := gsc.GetConfigManager()
+	if manager == nil {
+		return errors.New("no Git configuration manager registered")
 	}
-	return gitConfigManager.SaveConfig(gsc)
+	return manager.SaveConfig(gsc)
 }
 
 type configManager struct {
