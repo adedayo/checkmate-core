@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -78,7 +79,7 @@ type Project struct {
 	ScanPolicy           ScanPolicy   `yaml:"ScanPolicy"`
 }
 
-//ProjectDescription used to create new/update projects
+// ProjectDescription used to create new/update projects
 type ProjectDescription struct {
 	Name         string       `yaml:"Name"` //human-friendly
 	Repositories []Repository `yaml:"Repositories,omitempty"`
@@ -86,7 +87,7 @@ type ProjectDescription struct {
 	ScanPolicy   ScanPolicy   `yaml:"ScanPolicy"`
 }
 
-//ProjectDescriptionWire used to create new/update projects (wire representation)
+// ProjectDescriptionWire used to create new/update projects (wire representation)
 type ProjectDescriptionWire struct {
 	Name         string         `yaml:"Name"` //human-friendly
 	Repositories []Repository   `yaml:"Repositories,omitempty"`
@@ -143,12 +144,17 @@ func sanitiseRepositories(repository []Repository) []Repository {
 	return repository
 }
 
+// Intended to be used to check the status of a Git repository, such as "Archived", just before checkout
+// Results are stored in the Attributes map of the returned repository
+type RepositoryStatusChecker func(context.Context, ProjectManager, *Repository) (*Repository, error)
+
 type Repository struct {
 	Location     string `yaml:"Location"`
 	LocationType string `yaml:"LocationType"` //filesystem, git, svn etc.
 	GitServiceID string `yaml:"GitServiceID"` /*if this repository is from a "private" on-prem instance,
 	the service ID is used to locate the instance and associated API keys etc*/
-	Monitor bool `yaml:"Monitor"` //If this repository is continuously monitored for changes
+	Monitor    bool                    `yaml:"Monitor"`              //If this repository is continuously monitored for changes
+	Attributes *map[string]interface{} `yaml:"Attributes,omitempty"` //track any additional metadata about the repo, e.g. "archived"
 }
 
 func (repo Repository) IsGit() bool {
@@ -224,7 +230,7 @@ func (sp ScanPolicy) MarshalJSON() ([]byte, error) {
 	})
 }
 
-//Scan and Commit history of a repository branch
+// Scan and Commit history of a repository branch
 type RepositoryHistory struct {
 	Repository      Repository
 	ScanHistories   []ScanHistory

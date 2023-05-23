@@ -55,7 +55,8 @@ type ProjectManager interface {
 	GetScanResultSummary(projectID, scanID string) (ScanSummary, error)
 	// SummariseScanResults(projectID, scanID string, summariser func(projectID, scanID string, issues []*diagnostics.SecurityDiagnostic) *ScanSummary) error
 	RunScan(ctx context.Context, projectID string, scanPolicy ScanPolicy, scanner SecurityScanner,
-		scanIDCallback func(string), progressMonitor func(diagnostics.Progress),
+		scanIDCallback func(string), repoStatusChecker RepositoryStatusChecker,
+		progressMonitor func(diagnostics.Progress),
 		summariser ScanSummariser, wsSummariser WorkspaceSummariser,
 		consumers ...diagnostics.SecurityDiagnosticsConsumer)
 
@@ -818,6 +819,7 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 	scanPolicy ScanPolicy,
 	scanner SecurityScanner,
 	scanIDCallback func(string),
+	repoStatusChecker RepositoryStatusChecker,
 	progressMonitor func(diagnostics.Progress),
 	summariser ScanSummariser,
 	wsSummariser WorkspaceSummariser,
@@ -840,7 +842,7 @@ func (spm simpleProjectManager) RunScan(ctx context.Context, projectID string,
 		Total:       1,
 		CurrentFile: fmt.Sprintf("starting scan ..."),
 	})
-	scanner.Scan(ctx, projectID, scanID, spm, progressMonitor, consumers...)
+	scanner.Scan(ctx, projectID, scanID, spm, repoStatusChecker, progressMonitor, consumers...)
 	scanEndTime := time.Now()
 	sdc.close(scanStartTime, scanEndTime)
 	if out, err := spm.summariseScanResults(projectID, scanID, summariser); err == nil {
