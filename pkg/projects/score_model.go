@@ -87,8 +87,14 @@ func (mc ModelCounts) scoreMetrics() float32 {
 		0.4*sfp + 0.1*srm +
 		0.2*hcp
 
-	// log.Printf("metric = %f, prodVsTest = %f, sensitiveFile = %f, secretReuse = %f, higherConfidencePenalty = %f",
-	// 	metrics, pvt, sfp, srm, hcp)
+	if mc.CriticalCount > 0 {
+		metrics = capScore(metrics, 40)
+	} else if mc.HighCount > 0 {
+		metrics = capScore(metrics, 60)
+	} else if mc.MediumCount > 0 {
+		metrics = capScore(metrics, 80)
+	}
+
 	return metrics
 }
 
