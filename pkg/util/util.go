@@ -260,7 +260,7 @@ func (lk *LineKeeper) appendEOLs(eols []int) {
 	if len(lk.EOLLocations) > 0 {
 		last := lk.EOLLocations[len(lk.EOLLocations)-1]
 		for i := range sorted {
-			sorted[i] += last
+			sorted[i] += last + 1
 		}
 	}
 	lk.EOLLocations = append(lk.EOLLocations, sorted...)
@@ -277,15 +277,15 @@ func (lk *LineKeeper) GetPositionFromCharacterIndex(pos int64) code.Position {
 		if pos > int64(lk.EOLLocations[end]) {
 			return code.Position{
 				Line:      end + 1,
-				Character: pos - int64(lk.EOLLocations[end]),
+				Character: pos - int64(lk.EOLLocations[end]) - 1,
 			}
 		}
 		for i, eol := range lk.EOLLocations {
-			if int64(eol) > pos {
+			if int64(eol) >= pos {
 				if i > 0 {
 					return code.Position{
 						Line:      int64(i),
-						Character: pos - int64(lk.EOLLocations[i-1]),
+						Character: pos - int64(lk.EOLLocations[i-1]) - 1,
 					}
 				}
 				break
