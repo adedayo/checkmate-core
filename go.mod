@@ -30,3 +30,5 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
+
+replace github.com/adedayo/checkmate-core => ../checkmate-core
